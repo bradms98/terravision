@@ -386,15 +386,19 @@ def replace_var_values(
         )
         if not module:
             module = "main"
+        # Strip count/for_each index from module name (e.g. "test_server[0]" -> "test_server")
+        module_key = re.sub(r"\[.*?\]", "", module)
+        if module_key not in tfdata["variable_map"] and module in tfdata["variable_map"]:
+            module_key = module
         # Check if variable exists in current module and is resolved
-        if (lookup in tfdata["variable_map"][module].keys()) and (
-            "var." + lookup not in str(tfdata["variable_map"][module][lookup])
+        if (lookup in tfdata["variable_map"][module_key].keys()) and (
+            "var." + lookup not in str(tfdata["variable_map"][module_key][lookup])
         ):
             # Handle object-type variables (e.g., var.config.key)
             obj = ""
             for item in varobject_found_list:
                 if lookup in item:
-                    obj = tfdata["variable_map"][module][lookup]
+                    obj = tfdata["variable_map"][module_key][lookup]
                     varitem = item
             # Extract key from object variable
             if value.count(lookup) < 2 and obj != "" and isinstance(obj, dict):
@@ -413,7 +417,7 @@ def replace_var_values(
                 value = value.replace(varitem, str(keyvalue), 1)
             # Handle simple variable replacement
             elif value.count(lookup) < 2 and obj == "":
-                replacement_value = str(tfdata["variable_map"][module].get(lookup))
+                replacement_value = str(tfdata["variable_map"][module_key].get(lookup))
                 if (
                     isinstance(replacement_value, str)
                     and '"' not in replacement_value
@@ -423,15 +427,15 @@ def replace_var_values(
                 value = value.replace(varitem, replacement_value, 1)
             else:
                 value = value.replace(
-                    varitem, str(tfdata["variable_map"][module][lookup]) + " ", 1
+                    varitem, str(tfdata["variable_map"][module_key][lookup]) + " ", 1
                 )
         # Variable exists but still contains unresolved references
-        elif lookup in tfdata["variable_map"][module].keys():
-            if "var." in tfdata["variable_map"][module].get(lookup):
+        elif lookup in tfdata["variable_map"][module_key].keys():
+            if "var." in tfdata["variable_map"][module_key].get(lookup):
                 value = helpers.find_replace(varitem, '"UNKNOWN"', value)
             else:
                 value = value.replace(
-                    varitem, str(tfdata["variable_map"][module].get(lookup), 1)
+                    varitem, str(tfdata["variable_map"][module_key].get(lookup), 1)
                 )
             break
         # Search parent modules for variable
