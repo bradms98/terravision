@@ -231,6 +231,12 @@ def cli() -> None:
 )
 @click.option("--annotate", default="", help="Path to custom annotations file (YAML)")
 @click.option(
+    "--filter",
+    "filter_name",
+    default="",
+    help="Filter profile name from filters/ directory (e.g. network, security)",
+)
+@click.option(
     "--aibackend",
     default="",
     type=click.Choice(["", "bedrock", "ollama"], case_sensitive=False),
@@ -259,6 +265,7 @@ def draw(
     show: bool,
     simplified: bool,
     annotate: str,
+    filter_name: str,
     aibackend: str,
     avl_classes: Any,
     planfile: str,
@@ -304,6 +311,11 @@ def draw(
         graphmaker.simplify_graphdict(tfdata)
         _print_graph_debug(tfdata["graphdict"], "Simplified graphviz dictionary")
 
+    # Apply filter profile to exclude resource types
+    if filter_name:
+        graphmaker.filter_graphdict(tfdata, filter_name)
+        _print_graph_debug(tfdata["graphdict"], "Filtered graphviz dictionary")
+
     # Add provider suffix to output filename for non-AWS providers
     final_outfile = outfile
     if tfdata.get("provider_detection"):
@@ -343,6 +355,12 @@ def draw(
 )
 @click.option("--annotate", default="", help="Path to custom annotations file (YAML)")
 @click.option(
+    "--filter",
+    "filter_name",
+    default="",
+    help="Filter profile name from filters/ directory (e.g. network, security)",
+)
+@click.option(
     "--simplified",
     is_flag=True,
     default=False,
@@ -374,6 +392,7 @@ def graphdata(
     show_services: bool,
     simplified: bool,
     annotate: str,
+    filter_name: str,
     aibackend: str,
     avl_classes: Any,
     outfile: str = "graphdata.json",
@@ -415,6 +434,8 @@ def graphdata(
         tfdata = llm.refine_with_llm(tfdata, aibackend, debug)
     if simplified:
         graphmaker.simplify_graphdict(tfdata)
+    if filter_name:
+        graphmaker.filter_graphdict(tfdata, filter_name)
     click.echo(click.style("\nFinal Output JSON Dictionary :", fg="white", bold=True))
     unique = helpers.unique_services(tfdata["graphdict"])
     click.echo(

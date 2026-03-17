@@ -2325,6 +2325,93 @@ def create_multiple_resources(tfdata: Dict[str, Any]) -> Dict[str, Any]:
     return tfdata
 
 
+def filter_graphdict(tfdata: Dict[str, Any], filter_name: str) -> None:
+    """Remove resource types listed in a filter profile YAML file.
+
+    Loads a YAML file from the filters/ directory and removes all resources
+    whose type matches the 'exclude' list. Unlike simplify_graphdict, this
+    does not bridge connections — excluded nodes and their connections are
+    simply dropped.
+
+    Mutates tfdata['graphdict'] in-place.
+
+    Args:
+        tfdata: Terraform data dictionary with graphdict
+        filter_name: Name of the filter (without .yaml extension),
+                     looked up in the filters/ directory
+    """
+    import yaml
+    from pathlib import Path
+
+    # Search for filter file in multiple locations:
+    # 1. Current working directory's filters/ subfolder
+    # 2. Relative to the package source
+    search_paths = [
+        Path.cwd() / "filters",
+        Path(__file__).parent.parent / "filters",
+    ]
+
+    filter_path = None
+    for search_dir in search_paths:
+        candidate = search_dir / f"{filter_name}.yaml"
+        if candidate.exists():
+            filter_path = candidate
+            break
+
+    if filter_path is None:
+        click.echo(
+            click.style(
+                f"\nERROR: Filter '{filter_name}' not found.",
+                fg="red",
+            )
+        )
+        # List available filters from all search paths
+        available = set()
+        for search_dir in search_paths:
+            if search_dir.exists():
+                available.update(f.stem for f in search_dir.glob("*.yaml"))
+        if available:
+            click.echo(f"Available filters: {', '.join(sorted(available))}")
+        else:
+            click.echo("No filter files found. Create YAML files in a filters/ directory.")
+        return
+
+    with open(filter_path, "r") as f:
+        filter_config = yaml.safe_load(f)
+
+    exclude_types = set(filter_config.get("exclude", []))
+    if not exclude_types:
+        click.echo(f"Filter '{filter_name}' has no exclude list, skipping.")
+        return
+
+    click.echo(f"\nApplying filter: {filter_name}")
+    click.echo(f"  Excluding {len(exclude_types)} resource type(s)")
+
+    graphdict = tfdata.get("graphdict", {})
+
+    def _should_exclude(resource_name: str) -> bool:
+        base_name = helpers.get_no_module_name(resource_name)
+        if not base_name:
+            return False
+        return base_name.split(".")[0] in exclude_types
+
+    # Find nodes to remove
+    nodes_to_remove = [k for k in graphdict if _should_exclude(k)]
+
+    # Remove excluded nodes from all connection lists
+    for key in graphdict:
+        if key not in nodes_to_remove:
+            graphdict[key] = [
+                conn for conn in graphdict[key] if not _should_exclude(conn)
+            ]
+
+    # Delete the excluded nodes themselves
+    for node in nodes_to_remove:
+        del graphdict[node]
+
+    click.echo(f"  Removed {len(nodes_to_remove)} resource(s) from graph")
+
+
 def simplify_graphdict(tfdata: Dict[str, Any]) -> None:
     """Remove networking group nodes from graphdict for simplified diagrams.
 

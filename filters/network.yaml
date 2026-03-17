@@ -1,0 +1,28 @@
+# Network Diagram Filter
+# Shows VPCs, subnets, gateways, and networking resources.
+# Hides IAM, monitoring, logging, and other non-network resources.
+
+exclude:
+  # IAM
+  - aws_iam_role
+  - aws_iam_policy
+  - aws_iam_role_policy_attachment
+  - aws_iam_role_policy
+  - aws_iam_instance_profile
+  - aws_iam_group
+  # Logging & Monitoring
+  - aws_flow_log
+  - aws_cloudwatch_log_group
+  - aws_cloudwatch_metric_alarm
+  - aws_cloudwatch_log_stream
+  # Keys
+  - aws_key_pair
+  - aws_kms_key
+  - aws_kms_alias
+  # SSM
+  - aws_ssm_document
+  - aws_ssm_parameter
+  # Other
+  - aws_ram_principal_association
+  - aws_ram_resource_association
+  - aws_ram_resource_share
