@@ -24,6 +24,7 @@ from modules.provider_detector import get_primary_provider_or_default
 # Import base resource classes
 # pylint: disable=unused-wildcard-import
 from resource_classes import *
+from resource_classes import set_layout_mode, get_layout_mode
 
 # Generic resources (always needed)
 from resource_classes.generic.blank import Blank
@@ -503,7 +504,9 @@ def handle_group(
 
     # Skip empty groups (groups with no children)
     # Empty subnets/groups cause layout issues where they get huge bounding boxes
-    if not tfdata["graphdict"].get(resource):
+    # In grid mode, keep empty subnet groups so they render as stacked containers in AZs
+    is_subnet = resource_type == "aws_subnet"
+    if not tfdata["graphdict"].get(resource) and not (is_subnet and get_layout_mode() == "grid"):
         return None, drawn_resources
 
     # Create new group/cluster
@@ -520,6 +523,10 @@ def handle_group(
     create_cluster_label_node(newGroup)
 
     # Add child nodes and subgroups
+    # Track subnet clusters for vertical chaining in grid mode
+    subnet_placeholders = []
+    is_az = resource_type in ("aws_az", "tv_aws_az", "AvailabilityZone")
+
     if tfdata["graphdict"].get(resource):
         for node_connection in tfdata["graphdict"][resource]:
             node_type = str(helpers.get_no_module_name(node_connection).split(".")[0])
@@ -539,6 +546,20 @@ def handle_group(
                     drawn_resources,
                 )
                 if subGroup is not None:
+                    # In grid mode, add invisible placeholder inside each subnet
+                    # so we can chain them with edges to force vertical stacking
+                    if get_layout_mode() == "grid" and is_az and node_type == "aws_subnet":
+                        placeholder_id = f"_ph_{subGroup.dot.name}"
+                        subGroup.dot.node(
+                            placeholder_id,
+                            label="",
+                            shape="none",
+                            width="0",
+                            height="0",
+                            fixedsize="true",
+                        )
+                        subnet_placeholders.append(placeholder_id)
+
                     newGroup.subgraph(subGroup.dot)
                     drawn_resources.append(node_connection)
 
@@ -564,6 +585,15 @@ def handle_group(
                         "label", helpers.pretty_name(node_connection)
                     )
                     newGroup.add_node(newNode._id, label=node_label)
+
+    # Chain subnet placeholders with invisible edges to force vertical stacking
+    if len(subnet_placeholders) > 1 and get_layout_mode() == "grid":
+        for i in range(len(subnet_placeholders) - 1):
+            newGroup.dot.edge(
+                subnet_placeholders[i],
+                subnet_placeholders[i + 1],
+                style="invis",
+            )
 
     return newGroup, drawn_resources
 
@@ -640,12 +670,153 @@ def draw_objects(
     return all_drawn_resources_list
 
 
+def _deduplicate_az_subnets(tfdata: Dict[str, Any]) -> None:
+    """Split shared AZ nodes so each VPC gets its own AZ with only its subnets.
+
+    The graphdict often has shared AZ nodes (e.g., aws_az.availability_zone_usw2_az1)
+    containing subnets from multiple VPCs. This splits them into per-VPC copies
+    so each VPC's AZ cluster only shows that VPC's subnets.
+
+    Args:
+        tfdata: Terraform data dictionary (mutated in place)
+    """
+    graphdict = tfdata.get("graphdict", {})
+
+    # Find VPCs and their AZ children
+    vpcs = {}
+    for resource, children in list(graphdict.items()):
+        resource_type = helpers.get_no_module_name(resource).split(".")[0]
+        if resource_type == "aws_vpc" and isinstance(children, list):
+            az_children = [c for c in children
+                           if helpers.get_no_module_name(c).split(".")[0] in ("aws_az", "tv_aws_az")]
+            if az_children:
+                vpcs[resource] = az_children
+
+    if len(vpcs) < 2:
+        return  # No dedup needed for single VPC
+
+    # For each shared AZ, figure out which subnets belong to which VPC
+    for vpc_resource, az_list in vpcs.items():
+        # Extract module prefix from VPC (e.g., "module.test_vpc" from "module.test_vpc.aws_vpc.vpc")
+        vpc_parts = vpc_resource.rsplit(".aws_vpc.", 1)
+        vpc_prefix = vpc_parts[0] if len(vpc_parts) > 1 else ""
+
+        new_az_refs = []
+        for az_resource in az_list:
+            az_children = graphdict.get(az_resource, [])
+            if not az_children:
+                continue
+
+            # Filter to only this VPC's subnets
+            my_subnets = [c for c in az_children if c.startswith(vpc_prefix + ".")]
+            if not my_subnets:
+                continue
+
+            # Create a VPC-specific copy of the AZ
+            az_copy_key = f"{vpc_prefix}.{az_resource}"
+            graphdict[az_copy_key] = my_subnets
+            if "meta_data" in tfdata and az_copy_key not in tfdata["meta_data"]:
+                tfdata["meta_data"][az_copy_key] = {}
+            new_az_refs.append(az_copy_key)
+
+        # Replace shared AZ refs with VPC-specific ones in VPC's children
+        graphdict[vpc_resource] = [
+            c for c in graphdict[vpc_resource] if c not in az_list
+        ] + new_az_refs
+
+    # Remove the original shared AZ entries
+    shared_azs = set()
+    for az_list in vpcs.values():
+        shared_azs.update(az_list)
+    for az in shared_azs:
+        if az in graphdict:
+            del graphdict[az]
+
+
+def _sort_subnet_order(tfdata: Dict[str, Any]) -> None:
+    """Sort subnets within AZs so public subnets come before private.
+
+    For grid layout with rankdir=TB, this ensures public subnets render
+    on top and private subnets below within each availability zone.
+
+    Args:
+        tfdata: Terraform data dictionary (mutated in place)
+    """
+    graphdict = tfdata.get("graphdict", {})
+    for resource, children in graphdict.items():
+        resource_type = helpers.get_no_module_name(resource).split(".")[0]
+        if resource_type in ("aws_az", "tv_aws_az", "AvailabilityZone"):
+            if isinstance(children, list):
+                # Sort: public subnets first, then private, then other resources
+                def subnet_sort_key(child):
+                    child_type = helpers.get_no_module_name(child).split(".")[0]
+                    if child_type == "aws_subnet":
+                        if "public" in child.lower():
+                            return 0  # Public first
+                        return 1  # Private second
+                    return 2  # Non-subnet resources last
+
+                graphdict[resource] = sorted(children, key=subnet_sort_key)
+
+
+def _inject_region_account_hierarchy(tfdata: Dict[str, Any]) -> None:
+    """Wrap VPCs in Region and Account containers for grid layout.
+
+    Extracts region from provider config and creates wrapper hierarchy:
+    AWS Account -> Region -> existing VPCs
+
+    Args:
+        tfdata: Terraform data dictionary (mutated in place)
+    """
+    graphdict = tfdata.get("graphdict", {})
+
+    # Find region from provider config
+    region = "us-east-1"  # default
+    all_provider = tfdata.get("all_provider", {})
+    for provider_key, provider_attrs in all_provider.items():
+        if "aws" in provider_key.lower():
+            if isinstance(provider_attrs, dict):
+                region = provider_attrs.get("region", region)
+            elif isinstance(provider_attrs, list):
+                for item in provider_attrs:
+                    if isinstance(item, dict) and "region" in item:
+                        region = item["region"]
+                        break
+            break
+
+    # Find top-level VPC resources
+    vpc_resources = []
+    for resource in list(graphdict.keys()):
+        resource_type = helpers.get_no_module_name(resource).split(".")[0]
+        if resource_type == "aws_vpc":
+            vpc_resources.append(resource)
+
+    if not vpc_resources:
+        return
+
+    # Create region node that contains the VPCs
+    region_key = f"tv_aws_region.{region}"
+    graphdict[region_key] = vpc_resources
+
+    # Create account node that contains the region
+    account_key = "aws_account.account"
+    graphdict[account_key] = [region_key]
+
+    # Ensure meta_data entries exist
+    if "meta_data" in tfdata:
+        if region_key not in tfdata["meta_data"]:
+            tfdata["meta_data"][region_key] = {}
+        if account_key not in tfdata["meta_data"]:
+            tfdata["meta_data"][account_key] = {}
+
+
 def render_diagram(
     tfdata: Dict[str, Any],
     picshow: bool,
     outfile: str,
     format: str,
     source: str,
+    layout: str = "auto",
 ) -> None:
     """Main control function for rendering the architecture diagram.
 
@@ -658,6 +829,7 @@ def render_diagram(
         outfile: Output filename without extension
         format: Output format (png, svg, pdf, bmp)
         source: Source path or URL for footer attribution
+        layout: Layout mode - 'grid' (dot engine) or 'auto' (neato engine)
 
     Returns:
         None (generates diagram file as side effect)
@@ -684,6 +856,14 @@ def render_diagram(
     ALWAYS_DRAW_LINE = constants["ALWAYS_DRAW_LINE"]
     NEVER_DRAW_LINE = constants["NEVER_DRAW_LINE"]
 
+    # Set global layout mode so groups and Canvas can use it
+    set_layout_mode(layout)
+
+    # Prepare graphdict for grid layout
+    if layout == "grid":
+        _deduplicate_az_subnets(tfdata)
+        _sort_subnet_order(tfdata)
+
     # Track already drawn resources to prevent duplicates
     all_drawn_resources_list = list()
     tfdata["deferred_connections"] = list()
@@ -694,14 +874,27 @@ def render_diagram(
         if not tfdata["annotations"].get("title")
         else tfdata["annotations"]["title"]
     )
-    # Use 'neato' engine for all providers with neato_no_op=2
+
+    # Grid mode uses dot engine for hierarchical layout; auto uses neato (force-directed)
+    if layout == "grid":
+        engine = "dot"
+        graph_attr_overrides = {
+            "nodesep": "0.75",
+            "ranksep": "1.0",
+            "compound": "true",
+        }
+    else:
+        engine = "neato"
+        graph_attr_overrides = {}
+
     myDiagram = Canvas(
         "",
         filename=outfile,
         outformat=format,
         show=picshow,
         direction="TB",
-        engine="neato",
+        engine=engine,
+        graph_attr=graph_attr_overrides,
     )
     setdiagram(myDiagram)
 
@@ -719,17 +912,24 @@ def render_diagram(
         )
         exit()
 
-    # Add title as a node at the top (positioned by gvpr for all providers)
+    # Add title
     setcluster(myDiagram)
-    title_style = {
-        "_titlenode": "1",
-        "shape": "plaintext",
-        "fontsize": "30",
-        "fontname": "Sans-Serif",
-        "fontcolor": "#2D3436",
-        "label": title,
-    }
-    getattr(sys.modules[__name__], "Node")(**title_style)
+    if layout == "grid":
+        # In grid mode, use graph label for title (dot positions it at top natively)
+        myDiagram.dot.graph_attr["label"] = title
+        myDiagram.dot.graph_attr["labelloc"] = "t"
+        myDiagram.dot.graph_attr["labeljust"] = "c"
+    else:
+        # In auto mode, add title as a node (positioned by gvpr)
+        title_style = {
+            "_titlenode": "1",
+            "shape": "plaintext",
+            "fontsize": "30",
+            "fontname": "Sans-Serif",
+            "fontcolor": "#2D3436",
+            "label": title,
+        }
+        getattr(sys.modules[__name__], "Node")(**title_style)
 
     cloudGroup = cloud_group_class()
     setcluster(cloudGroup)
@@ -805,23 +1005,24 @@ def render_diagram(
                                 )
                             )
 
-    # Add footer with metadata
-    if source == ".":
-        source = os.getcwd()
+    # Add footer with metadata (skip for grid layout — it renders as a sidebar)
+    if layout != "grid":
+        if source == ".":
+            source = os.getcwd()
 
-    # Set context to main diagram so footer is outside all clusters
-    setcluster(myDiagram)
+        # Set context to main diagram so footer is outside all clusters
+        setcluster(myDiagram)
 
-    # Add footer node (positioned by gvpr for all providers)
-    footer_style = {
-        "_footernode": "1",
-        "shape": "record",
-        "width": "25",
-        "height": "2",
-        "fontsize": "18",
-        "label": f"Machine generated using TerraVision|{{ Timestamp:|Source: }}|{{ {datetime.datetime.now()}|{source} }}",
-    }
-    getattr(sys.modules[__name__], "Node")(**footer_style)
+        # Add footer node (positioned by gvpr for all providers)
+        footer_style = {
+            "_footernode": "1",
+            "shape": "record",
+            "width": "25",
+            "height": "2",
+            "fontsize": "18",
+            "label": f"Machine generated using TerraVision|{{ Timestamp:|Source: }}|{{ {datetime.datetime.now()}|{source} }}",
+        }
+        getattr(sys.modules[__name__], "Node")(**footer_style)
 
     # Create label node for cloud group if it has label metadata
     create_cluster_label_node(cloudGroup)
@@ -835,11 +1036,18 @@ def render_diagram(
     # Post-process with Graphviz
     click.echo(click.style(f"\nRendering Architecture Image...", fg="white", bold=True))
 
-    # Apply label positioning script
-    bundle_dir = Path(__file__).parent.parent
-    path_to_script = Path.cwd() / bundle_dir / "shiftLabel.gvpr"
-    path_to_postdot = Path.cwd() / f"{outfile}.dot"
-    os.system(f"gvpr -c -q -f {path_to_script} {path_to_predot} -o {path_to_postdot}")
+    if layout == "grid":
+        # dot engine handles label positioning natively via labelloc/labeljust
+        # Skip gvpr post-processing — just rename the pre-render DOT as the post-DOT
+        path_to_postdot = Path.cwd() / f"{outfile}.dot"
+        import shutil
+        shutil.copy(str(path_to_predot), str(path_to_postdot))
+    else:
+        # Apply label positioning script (neato mode)
+        bundle_dir = Path(__file__).parent.parent
+        path_to_script = Path.cwd() / bundle_dir / "shiftLabel.gvpr"
+        path_to_postdot = Path.cwd() / f"{outfile}.dot"
+        os.system(f"gvpr -c -q -f {path_to_script} {path_to_predot} -o {path_to_postdot}")
 
     # Handle draw.io format conversion
     if format == "drawio":

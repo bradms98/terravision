@@ -255,6 +255,12 @@ def cli() -> None:
     type=click.Path(),
     help="Path to Terraform graph DOT (terraform graph)",
 )
+@click.option(
+    "--layout",
+    default="grid",
+    type=click.Choice(["auto", "grid"], case_sensitive=False),
+    help="Layout engine: grid (dot, nested containers) or auto (neato, force-directed)",
+)
 def draw(
     debug: bool,
     source: str,
@@ -270,6 +276,7 @@ def draw(
     avl_classes: Any,
     planfile: str,
     graphfile: str,
+    layout: str,
 ) -> None:
     """Draw architecture diagram from Terraform code.
 
@@ -287,6 +294,7 @@ def draw(
         avl_classes: Available classes (hidden)
         planfile: Path to pre-generated Terraform plan JSON file
         graphfile: Path to pre-generated Terraform graph DOT file
+        layout: Layout mode (grid or auto)
     """
     if not debug:
         sys.excepthook = my_excepthook
@@ -323,7 +331,7 @@ def draw(
         if provider != "aws" and not outfile.endswith(f"-{provider}"):
             final_outfile = f"{outfile}-{provider}"
 
-    drawing.render_diagram(tfdata, show, final_outfile, format, source)
+    drawing.render_diagram(tfdata, show, final_outfile, format, source, layout)
 
 
 @cli.command()

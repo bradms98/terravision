@@ -16,6 +16,18 @@ __diagram = contextvars.ContextVar("resource_classes")
 __cluster = contextvars.ContextVar("cluster")
 defaultdir = "LR"
 
+# Layout mode: "auto" (neato) or "grid" (dot)
+_layout_mode = "auto"
+
+
+def get_layout_mode():
+    return _layout_mode
+
+
+def set_layout_mode(mode):
+    global _layout_mode
+    _layout_mode = mode
+
 # basepath = os.environ.get('resource_images', '/home/username/')
 try:
     base_path = sys._MEIPASS
@@ -263,7 +275,7 @@ class Canvas:
         }
 
         # Use neato_no_op=2 for neato engine to preserve node positions
-        if self.engine == "neato":
+        if self.engine == "neato" and get_layout_mode() != "grid":
             render_kwargs["neato_no_op"] = 2
 
         filename = dotsource.render(**render_kwargs)
