@@ -65,7 +65,7 @@ class RegionGroup(Cluster):
 
 class SubnetGroup(Cluster):
     def __init__(self, label, **kwargs):
-        if "Public" in label:
+        if "public" in label.lower():
             image = "public_subnet.png"
             col = "#F2F7EE"
         else:
