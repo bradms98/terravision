@@ -376,7 +376,7 @@ class Node:
         # label = f'< <font color="blue">{label} </font>>'
         self.label = label
         # fmt: off
-        padding = 0.4 * (label.count('\n'))
+        padding = 0.4 * (label.count('\n') + label.count(r'\n'))
         self._attrs = {
             "shape": "none",
             "tf_resource_name" : "unknown",

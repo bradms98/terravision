@@ -247,7 +247,7 @@ def handle_nodes(
         is_outer = resource_type in OUTER_NODES
         is_edge = any(resource_type.startswith(e) for e in EDGE_NODES)
         targetGroup = diagramCanvas if is_outer else inGroup
-        node_label = helpers.pretty_name(resource)
+        node_label = helpers.build_rich_label(resource, tfdata)
         setcluster(targetGroup)
         nodeClass = getattr(sys.modules[__name__], resource_type)
         # Build extra node attrs
@@ -510,10 +510,7 @@ def handle_group(
         return None, drawn_resources
 
     # Create new group/cluster
-    node_label = helpers.pretty_name(resource, is_group=True)
-    cidr = helpers.get_cidr_label(resource, tfdata)
-    if cidr:
-        node_label = f"{node_label} ({cidr})"
+    node_label = helpers.build_rich_label(resource, tfdata, is_group=True)
     newGroup = getattr(sys.modules[__name__], resource_type)(label=node_label)
     targetGroup = diagramCanvas if resource_type in OUTER_NODES else inGroup
     targetGroup.subgraph(newGroup.dot)
@@ -582,7 +579,7 @@ def handle_group(
                 if newNode is not None:
                     # Don't overwrite HTML labels (GCP nodes have custom HTML tables)
                     node_label = newNode._attrs.get(
-                        "label", helpers.pretty_name(node_connection)
+                        "label", newNode.label
                     )
                     newGroup.add_node(newNode._id, label=node_label)
 

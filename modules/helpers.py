@@ -336,6 +336,95 @@ def get_cidr_label(resource: str, tfdata: Dict[str, Any]) -> str:
     return value
 
 
+def get_name_tag(resource: str, tfdata: Dict[str, Any]) -> str:
+    """Get the Name tag value for a resource if available."""
+    meta = tfdata.get("original_metadata", tfdata.get("meta_data", {})).get(
+        resource, {}
+    )
+    if not isinstance(meta, dict):
+        return ""
+    # Try tags_all first (AWS provider v4+), then tags
+    for tags_key in ("tags_all", "tags"):
+        tags = meta.get(tags_key)
+        if isinstance(tags, dict):
+            name = tags.get("Name", "")
+            if name and isinstance(name, str):
+                return name
+    return ""
+
+
+def _truncate_resource_id(rid: str) -> str:
+    """Truncate a resource ID keeping the type prefix and first/last 4 chars.
+
+    Examples:
+        i-0ba8a837d0e5dc02c       -> i-0ba8...c02c
+        subnet-07f8d38b8bb1384a9  -> subnet-07f8...4a9
+        rtb-08854969596107b5b     -> rtb-0885...b5b
+        tgw-0fb1a95e213bd4049     -> tgw-0fb1...4049
+        simple-short              -> simple-short  (no truncation needed)
+    """
+    # Split on first hyphen to get type prefix and id portion
+    dash_idx = rid.find("-")
+    if dash_idx == -1 or dash_idx >= len(rid) - 1:
+        return rid
+    prefix = rid[: dash_idx + 1]  # e.g. "i-", "subnet-", "rtb-"
+    id_part = rid[dash_idx + 1 :]  # e.g. "0ba8a837d0e5dc02c"
+    if len(id_part) <= 8:
+        return rid
+    return f"{prefix}{id_part[:4]}...{id_part[-4:]}"
+
+
+def get_resource_id(resource: str, tfdata: Dict[str, Any]) -> str:
+    """Get the resource ID for a resource if available, truncated for display."""
+    meta = tfdata.get("original_metadata", tfdata.get("meta_data", {})).get(
+        resource, {}
+    )
+    if not isinstance(meta, dict):
+        return ""
+    rid = meta.get("id", "")
+    if not isinstance(rid, str) or not rid:
+        return ""
+    return _truncate_resource_id(rid)
+
+
+def build_rich_label(resource: str, tfdata: Dict[str, Any], is_group: bool = False) -> str:
+    """Build a multi-line label with resource type, Name tag, and resource ID.
+
+    Line 1: Resource type (e.g., "EC2", "Transit Gateway Attachment")
+    Line 2: Name tag value (if exists). For subnets, includes CIDR range.
+    Line 3: Resource ID of the resource
+    """
+    # Line 1: Resource type only (no instance name)
+    type_label = pretty_name(resource, show_title=False, is_group=True)
+
+    # Line 2: Name tag + CIDR for subnets
+    name_tag = get_name_tag(resource, tfdata)
+    cidr = get_cidr_label(resource, tfdata)
+    line2_parts = []
+    if name_tag:
+        line2_parts.append(name_tag)
+    if cidr:
+        line2_parts.append(cidr)
+    line2 = " ".join(line2_parts)
+
+    # Line 3: Resource ID
+    resource_id = get_resource_id(resource, tfdata)
+
+    # Build multi-line label
+    # Groups use HTML labels in Graphviz, so use <BR/> for line breaks.
+    # Nodes use literal \n (backslash-n) which graphviz renders as centered
+    # line breaks — actual newline chars would break the dot format for
+    # labels that don't get quoted by the Python graphviz library.
+    lines = [type_label]
+    if line2:
+        lines.append(line2)
+    if resource_id:
+        lines.append(resource_id)
+
+    separator = "<BR/>" if is_group else r"\n"
+    return separator.join(lines)
+
+
 def extract_subfolder_from_repo(source_url: str) -> Tuple[str, str]:
     """Extract repo URL and subfolder from a string.
 
