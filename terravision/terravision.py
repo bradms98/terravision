@@ -67,6 +67,7 @@ def _enrich_graph_data(
     tfdata = graphmaker.handle_special_resources(tfdata)
     tfdata = graphmaker.handle_variants(tfdata)
     tfdata = graphmaker.create_multiple_resources(tfdata)
+    tfdata = graphmaker.scope_subnet_id_resources(tfdata)
     tfdata = graphmaker.cleanup_cross_subnet_connections(tfdata)
     tfdata = graphmaker.reverse_relations(tfdata)
     # Bidirectional links are now rendered as two-way arrows instead of being removed

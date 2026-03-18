@@ -2189,6 +2189,98 @@ def cleanup_cross_subnet_connections(tfdata: Dict[str, Any]) -> Dict[str, Any]:
     return tfdata
 
 
+def scope_subnet_id_resources(tfdata: Dict[str, Any]) -> Dict[str, Any]:
+    """Scope resources with subnet_ids metadata to only their correct subnets.
+
+    Resources like TGW VPC attachments reference specific subnet_ids in their
+    metadata, but the Terraform dependency graph uses a single for_each node
+    connected to all subnets across all VPCs.  When expanded, every instance
+    inherits edges to every subnet.  This function uses the resolved subnet_ids
+    to remove incorrect cross-VPC edges.
+    """
+    # Resource types that carry a subnet_ids attribute and should be scoped
+    _SUBNET_ID_RESOURCES = {
+        "aws_ec2_transit_gateway_vpc_attachment",
+    }
+
+    subnets = helpers.list_of_dictkeys_containing(tfdata["graphdict"], "aws_subnet")
+    if not subnets:
+        return tfdata
+
+    def _lookup_meta(key, tfdata):
+        """Look up metadata, trying with and without ~N suffix."""
+        store = tfdata.get("original_metadata", tfdata.get("meta_data", {}))
+        meta = store.get(key)
+        if isinstance(meta, dict):
+            return meta
+        # Strip ~N suffix added by graph expansion
+        base = key.rsplit("~", 1)[0] if "~" in key else key
+        meta = store.get(base)
+        return meta if isinstance(meta, dict) else {}
+
+    # Build subnet id → subnet node name lookup
+    subnet_id_to_node = {}
+    for sn in subnets:
+        meta = _lookup_meta(sn, tfdata)
+        sid = meta.get("id", "")
+        if sid and isinstance(sid, str):
+            subnet_id_to_node[sid] = sn
+
+    # Find resources that need scoping
+    for node, connections in list(tfdata["graphdict"].items()):
+        resource_type = helpers.get_no_module_name(node).split(".")[0]
+        if resource_type not in _SUBNET_ID_RESOURCES:
+            continue
+
+        meta = _lookup_meta(node, tfdata)
+        if not meta:
+            continue
+        target_subnet_ids = meta.get("subnet_ids", [])
+        if not target_subnet_ids or not isinstance(target_subnet_ids, list):
+            continue
+
+        # Resolve target subnet_ids to node names
+        correct_subnets = set()
+        for sid in target_subnet_ids:
+            if sid in subnet_id_to_node:
+                correct_subnets.add(subnet_id_to_node[sid])
+
+        if not correct_subnets:
+            continue
+
+        # Derive the correct VPCs from the correct subnets' parent VPCs
+        correct_vpcs = set()
+        for sn in correct_subnets:
+            for vpc_node, vpc_children in tfdata["graphdict"].items():
+                if helpers.get_no_module_name(vpc_node).startswith("aws_vpc.") and sn in vpc_children:
+                    correct_vpcs.add(vpc_node)
+
+        # Remove this resource from subnets and VPCs it doesn't belong to,
+        # and ensure it's present in the ones it does belong to
+        for sn in subnets:
+            children = tfdata["graphdict"].get(sn, [])
+            if sn in correct_subnets:
+                if node not in children:
+                    children.append(node)
+            else:
+                if node in children:
+                    children.remove(node)
+
+        # Fix VPC-level edges too
+        vpcs = [k for k in tfdata["graphdict"]
+                if helpers.get_no_module_name(k).startswith("aws_vpc.")]
+        for vpc in vpcs:
+            children = tfdata["graphdict"].get(vpc, [])
+            if vpc in correct_vpcs:
+                if node not in children:
+                    children.append(node)
+            else:
+                if node in children:
+                    children.remove(node)
+
+    return tfdata
+
+
 def create_multiple_resources(tfdata: Dict[str, Any]) -> Dict[str, Any]:
     """Main function to create multiple resource instances.
 
