@@ -397,27 +397,32 @@ def build_rich_label(resource: str, tfdata: Dict[str, Any], is_group: bool = Fal
     # Line 1: Resource type only (no instance name)
     type_label = pretty_name(resource, show_title=False, is_group=True)
 
-    # Line 2: Name tag + CIDR for subnets
     name_tag = get_name_tag(resource, tfdata)
     cidr = get_cidr_label(resource, tfdata)
-    line2_parts = []
-    if name_tag:
-        line2_parts.append(name_tag)
-    if cidr:
-        line2_parts.append(cidr)
-    line2 = " ".join(line2_parts)
-
-    # Line 3: Resource ID
     resource_id = get_resource_id(resource, tfdata)
+
+    # For subnets: put Name on line 1 with type, CIDR alone on line 2
+    resource_type = get_no_module_name(resource).split(".")[0]
+    is_subnet = resource_type in _CIDR_ATTRIBUTES and "subnet" in resource_type.lower()
 
     # Build multi-line label
     # Groups use HTML labels in Graphviz, so use <BR/> for line breaks.
     # Nodes use literal \n (backslash-n) which graphviz renders as centered
     # line breaks — actual newline chars would break the dot format for
     # labels that don't get quoted by the Python graphviz library.
-    lines = [type_label]
-    if line2:
-        lines.append(line2)
+    if is_subnet and name_tag:
+        lines = [f"{type_label} - {name_tag}"]
+        if cidr:
+            lines.append(cidr)
+    else:
+        lines = [type_label]
+        line2_parts = []
+        if name_tag:
+            line2_parts.append(name_tag)
+        if cidr:
+            line2_parts.append(cidr)
+        if line2_parts:
+            lines.append(" ".join(line2_parts))
     if resource_id:
         lines.append(resource_id)
 
