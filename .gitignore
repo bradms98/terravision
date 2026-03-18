@@ -71,3 +71,9 @@ architecture*.drawio
 architecture*.json
 
 docs/*-plan.md
+
+# Test output artifacts
+test_*.png
+test_*.drawio
+test_*.dot
+test_*.dot.dot
