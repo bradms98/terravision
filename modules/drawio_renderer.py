@@ -270,6 +270,25 @@ def render_drawio(tfdata, outfile, source, layout):
             lines.append(current.rstrip())
         return "<br>".join(lines)
 
+    # Extract AWS account ID from plan data for account label
+    _account_id = None
+    plandata = tfdata.get("plandata", {})
+    def _find_account_id(obj):
+        if isinstance(obj, dict):
+            if "account_id" in obj and isinstance(obj["account_id"], str):
+                return obj["account_id"]
+            for v in obj.values():
+                result = _find_account_id(v)
+                if result:
+                    return result
+        elif isinstance(obj, list):
+            for v in obj:
+                result = _find_account_id(v)
+                if result:
+                    return result
+        return None
+    _account_id = _find_account_id(plandata)
+
     def _build_label(resource_key, is_group=False):
         """Build a plain-text label for draw.io (no Graphviz markup)."""
         resource_type = _safe_resource_type(resource_key)
@@ -279,10 +298,15 @@ def render_drawio(tfdata, outfile, source, layout):
         resource_id = helpers.get_resource_id(resource_key, tfdata)
 
         if is_group:
-            # For containers, use a compact single-line label
+            # For containers: Type - Name on line 1, resource ID on line 2, CIDR on line 3
             parts = [type_label]
             if name_tag:
                 parts[0] = f"{type_label} - {name_tag}"
+            # Account node: use account ID from plan data
+            if resource_type == "aws_account" and _account_id:
+                parts.append(_account_id)
+            elif resource_id:
+                parts.append(resource_id)
             if cidr:
                 parts.append(cidr)
             return "<br>".join(parts)
@@ -371,16 +395,27 @@ def render_drawio(tfdata, outfile, source, layout):
             keys |= _collect_descendant_resources(child)
         return keys
 
-    def _resolve_route_table(assoc_key):
+    def _resolve_route_table(assoc_key, preferred_vpc_prefix=""):
         """Follow a route_table_association's connections to find its route_table.
 
-        Returns (route_table_key, resource_type) or None.
+        When multiple route tables are found (cross-VPC for_each expansion),
+        prefer the one matching the given VPC module prefix.
+
+        Returns route_table_key or None.
         """
+        candidates = []
         for conn in graphdict.get(assoc_key, []):
             conn_type = _safe_resource_type(conn)
             if conn_type == "aws_route_table":
-                return conn
-        return None
+                candidates.append(conn)
+        if not candidates:
+            return None
+        # Prefer candidate matching the container's VPC prefix
+        if preferred_vpc_prefix:
+            for c in candidates:
+                if _get_module_prefix(c) == preferred_vpc_prefix:
+                    return c
+        return candidates[0]
 
     def _build_tree(resource_key, vpc_ids=None):
         """Recursively build a LayoutNode tree from graphdict.
@@ -429,24 +464,27 @@ def render_drawio(tfdata, outfile, source, layout):
                 continue
             if child_type in tfdata.get("hidden", []):
                 continue
+
+            # --- Route table association → promote to route table icon ---
+            # Processed BEFORE assigned_resources check since associations
+            # may be shared across VPCs via for_each expansion, and route
+            # tables are allowed to appear in multiple subnets.
+            if child_type == "aws_route_table_association":
+                container_vpc_prefix = _get_module_prefix(resource_key)
+                rt_key = _resolve_route_table(child_key, preferred_vpc_prefix=container_vpc_prefix)
+                if rt_key and rt_key not in seen_rt_in_subnet:
+                    # Only promote if the route table belongs to the same VPC scope
+                    rt_prefix = _get_module_prefix(rt_key)
+                    if not rt_prefix or not container_vpc_prefix or rt_prefix == container_vpc_prefix or rt_prefix not in vpc_module_prefixes:
+                        rlabel = _build_label(rt_key, is_group=False)
+                        node.resources.append((rt_key, "aws_route_table", rlabel))
+                        seen_rt_in_subnet.add(rt_key)
+                continue  # always skip the association itself
+
             if child_key in assigned_resources:
                 continue
             if child_key in descendant_keys:
                 continue
-
-            # --- Route table association → promote to route table icon ---
-            if child_type == "aws_route_table_association":
-                rt_key = _resolve_route_table(child_key)
-                if rt_key and rt_key not in assigned_resources and rt_key not in seen_rt_in_subnet:
-                    # Only promote if the route table belongs to the same VPC scope
-                    rt_prefix = _get_module_prefix(rt_key)
-                    container_vpc_prefix = _get_module_prefix(resource_key)
-                    if not rt_prefix or not container_vpc_prefix or rt_prefix == container_vpc_prefix or rt_prefix not in vpc_module_prefixes:
-                        rlabel = _build_label(rt_key, is_group=False)
-                        node.resources.append((rt_key, "aws_route_table", rlabel))
-                        assigned_resources.add(rt_key)
-                        seen_rt_in_subnet.add(rt_key)
-                continue  # always skip the association itself
 
             # --- Hide overly-granular types ---
             if child_type in HIDE_TYPES:
@@ -529,6 +567,50 @@ def render_drawio(tfdata, outfile, source, layout):
         return
 
     root = _build_tree(root_key)
+
+    # Fallback: ensure every subnet has a route table by inheriting from
+    # siblings in the same VPC when the graphdict association is incomplete
+    def _fill_missing_route_tables(node):
+        """For subnets missing a route table, copy one from a sibling."""
+        if node.resource_type == "aws_vpc":
+            # Collect all route tables from descendant subnets, keyed by public/private
+            public_rt = None
+            private_rt = None
+            subnets_missing_rt = []
+
+            def _scan_subnets(n):
+                nonlocal public_rt, private_rt
+                if n.resource_type == "aws_subnet":
+                    has_rt = any(rt == "aws_route_table" for _, rt, _ in n.resources)
+                    is_public = "public" in n.key.lower()
+                    if has_rt:
+                        for rkey, rtype, rlabel in n.resources:
+                            if rtype == "aws_route_table":
+                                if is_public and not public_rt:
+                                    public_rt = (rkey, rtype, rlabel)
+                                elif not is_public and not private_rt:
+                                    private_rt = (rkey, rtype, rlabel)
+                    else:
+                        subnets_missing_rt.append((n, is_public))
+                for child in n.children:
+                    _scan_subnets(child)
+
+            _scan_subnets(node)
+
+            for subnet_node, is_public in subnets_missing_rt:
+                rt = public_rt if is_public else private_rt
+                if rt:
+                    subnet_node.resources.append(rt)
+                    # Re-sort to keep route tables last
+                    subnet_node.resources.sort(
+                        key=lambda r: (2 if r[1].startswith("aws_networkmanager_") else
+                                       1 if r[1] == "aws_route_table" else 0)
+                    )
+
+        for child in node.children:
+            _fill_missing_route_tables(child)
+
+    _fill_missing_route_tables(root)
 
     # Collect "outer" resources (users, internet, etc.) and edge resources
     outer_resources = []
