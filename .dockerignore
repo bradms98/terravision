@@ -21,7 +21,6 @@ __pycache__/
 .gitignore
 .dockerignore
 Dockerfile
-docker/
 poetry.lock
 LICENSE
 README.md
