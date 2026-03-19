@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 from typing import Any, Dict, List, Optional
+import copy
 import json
+import os
 import sys
 import click
 
@@ -117,10 +119,63 @@ def compile_tfdata(
     """
     already_processed = False
     if planfile:
-        validators.validate_pregenerated_inputs(planfile, graphfile, source)
-        tfdata = tfwrapper.process_pregenerated_source(
-            planfile, graphfile, source, annotate, debug
-        )
+        validators.validate_pregenerated_inputs(planfile, graphfile, source, statefile)
+        if graphfile:
+            tfdata = tfwrapper.process_pregenerated_source(
+                planfile, graphfile, source, annotate, debug
+            )
+        else:
+            # State-only mode: planfile + statefile, no graph needed
+            click.echo(
+                click.style(
+                    "\nUsing plan + state files (no graph). "
+                    "No Terraform commands will be executed.\n",
+                    fg="cyan",
+                    bold=True,
+                )
+            )
+            plandata = validators.validate_planfile(planfile)
+            state_data = validators.validate_statefile(statefile)
+            synthetic_changes = state_converter.state_to_resource_changes(state_data)
+            if not synthetic_changes:
+                click.echo(
+                    click.style(
+                        "\nERROR: State file contains no managed resources.\n",
+                        fg="red",
+                        bold=True,
+                    )
+                )
+                sys.exit(1)
+            tfdata = {
+                "codepath": os.path.abspath(source) if os.path.isdir(source) else source,
+                "workdir": os.getcwd(),
+                "plandata": dict(plandata),
+                "tf_resources_created": synthetic_changes,
+            }
+            tfdata["plandata"]["prior_state"] = state_converter.state_to_prior_state(state_data)
+            tfdata = tfwrapper.setup_tfdata(tfdata)
+            tfdata["original_graphdict"] = copy.deepcopy(tfdata["graphdict"])
+            tfdata["original_metadata"] = copy.deepcopy(tfdata["meta_data"])
+            # Parse source directory for HCL metadata.
+            # In state-only mode, external module clones may fail (no git creds
+            # in container). Continue without HCL enrichment if that happens —
+            # we still have full resource attributes from the state file.
+            codepath_list = (
+                [tfdata["codepath"]]
+                if isinstance(tfdata["codepath"], str)
+                else tfdata["codepath"]
+            )
+            import modules.fileparser as fileparser
+            try:
+                tfdata = fileparser.read_tfsource(codepath_list, [], annotate, tfdata)
+            except SystemExit:
+                click.echo(
+                    click.style(
+                        "\nWARNING: Source parsing failed (external modules unavailable). "
+                        "Continuing with state-only data.\n",
+                        fg="yellow",
+                    )
+                )
     elif source.endswith(".json"):
         validators.validate_source(source)
         tfdata = tfwrapper.load_json_source(source)
@@ -167,7 +222,6 @@ def compile_tfdata(
             tfdata = tfwrapper.tf_makegraph(tfdata, debug)
         else:
             tfdata = tfwrapper.setup_tfdata(tfdata)
-        import copy
         tfdata["original_graphdict"] = copy.deepcopy(tfdata["graphdict"])
         tfdata["original_metadata"] = copy.deepcopy(tfdata["meta_data"])
 

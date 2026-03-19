@@ -55,6 +55,28 @@ scalr get-json-output -plan="${PLAN_ID}" > /tmp/plan.json 2>/dev/null || {
     rm -f /tmp/plan.json
 }
 
+# Always fetch state from Scalr (used as fallback if graph generation fails
+# or if plan has no real changes)
+echo "==> Fetching current state from Scalr"
+STATE_VERSION_JSON=$(scalr get-current-state-version -workspace="${WORKSPACE_ID}" 2>/dev/null || true)
+if [ -n "$STATE_VERSION_JSON" ] && [ "$STATE_VERSION_JSON" != "null" ]; then
+    STATE_VERSION_ID=$(echo "$STATE_VERSION_JSON" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+if isinstance(data, dict):
+    print(data.get('id', ''))
+elif isinstance(data, list) and len(data) > 0:
+    print(data[0].get('id', ''))
+" 2>/dev/null || true)
+    if [ -n "$STATE_VERSION_ID" ]; then
+        echo "    State version ID: ${STATE_VERSION_ID}"
+        scalr get-state-version-download -state_version="${STATE_VERSION_ID}" > /tmp/state.json 2>/dev/null || {
+            echo "WARNING: Could not download state file"
+            rm -f /tmp/state.json
+        }
+    fi
+fi
+
 # Check if the plan has real changes (non no-op)
 HAS_CHANGES="no"
 if [ -f /tmp/plan.json ]; then
@@ -70,44 +92,29 @@ except Exception:
 " 2>/dev/null || echo "no")
 fi
 
-if [ "$HAS_CHANGES" = "no" ]; then
-    echo "==> No pending changes detected — fetching state from Scalr as fallback"
-    STATE_VERSION_JSON=$(scalr get-current-state-version -workspace="${WORKSPACE_ID}" 2>/dev/null || true)
-    if [ -n "$STATE_VERSION_JSON" ] && [ "$STATE_VERSION_JSON" != "null" ]; then
-        STATE_VERSION_ID=$(echo "$STATE_VERSION_JSON" | python3 -c "
-import sys, json
-data = json.load(sys.stdin)
-if isinstance(data, dict):
-    print(data.get('id', ''))
-elif isinstance(data, list) and len(data) > 0:
-    print(data[0].get('id', ''))
-" 2>/dev/null || true)
-        if [ -n "$STATE_VERSION_ID" ]; then
-            echo "    State version ID: ${STATE_VERSION_ID}"
-            scalr get-state-version-download -state_version="${STATE_VERSION_ID}" > /tmp/state.json 2>/dev/null || {
-                echo "WARNING: Could not download state file"
-                rm -f /tmp/state.json
-            }
-        fi
+if [ "$HAS_CHANGES" = "no" ] && [ -f /tmp/state.json ]; then
+    echo "==> No pending changes — using state-only mode, skipping terraform graph"
+else
+    echo "==> Generating terraform graph from ${SOURCE_DIR}"
+    cd "${SOURCE_DIR}"
+    terraform init -backend=false -input=false -no-color > /dev/null 2>&1 || true
+    terraform graph > /tmp/graph.dot 2>/dev/null || {
+        echo "    terraform graph command failed"
+        rm -f /tmp/graph.dot
+    }
+
+    # Fall back to existing graph.dot in source directory
+    if [ ! -f /tmp/graph.dot ] && [ -f "${SOURCE_DIR}/graph.dot" ]; then
+        echo "    Using existing graph.dot from source directory"
+        cp "${SOURCE_DIR}/graph.dot" /tmp/graph.dot
     fi
-fi
 
-echo "==> Generating terraform graph from ${SOURCE_DIR}"
-cd "${SOURCE_DIR}"
-terraform init -backend=false -input=false -no-color > /dev/null 2>&1 || true
-terraform graph > /tmp/graph.dot 2>/dev/null || {
-    echo "    terraform graph command failed"
-    rm -f /tmp/graph.dot
-}
-
-# Fall back to existing graph.dot in source directory
-if [ ! -f /tmp/graph.dot ] && [ -f "${SOURCE_DIR}/graph.dot" ]; then
-    echo "    Using existing graph.dot from source directory"
-    cp "${SOURCE_DIR}/graph.dot" /tmp/graph.dot
-fi
-
-if [ ! -f /tmp/graph.dot ]; then
-    echo "WARNING: No graph.dot available, proceeding without it"
+    # If graph failed but we have state, fall back to state-only mode
+    if [ ! -f /tmp/graph.dot ] && [ -f /tmp/state.json ]; then
+        echo "    Graph generation failed — falling back to state-only mode"
+    elif [ ! -f /tmp/graph.dot ]; then
+        echo "WARNING: No graph.dot available and no state file — proceeding without either"
+    fi
 fi
 
 # Build terravision command
@@ -121,17 +128,20 @@ TV_ARGS=(
     --outfile "${OUTFILE}"
 )
 
-# Both planfile and graphfile are required together by terravision
+# Add planfile and graphfile if available
 if [ -f /tmp/plan.json ] && [ -f /tmp/graph.dot ]; then
     TV_ARGS+=(--planfile /tmp/plan.json --graphfile /tmp/graph.dot)
+elif [ -f /tmp/plan.json ] && [ -f /tmp/state.json ]; then
+    # State-only mode: plan + state, no graph needed
+    TV_ARGS+=(--planfile /tmp/plan.json --statefile /tmp/state.json)
 elif [ -f /tmp/plan.json ]; then
-    echo "WARNING: Plan JSON available but no graph DOT — skipping --planfile (terravision requires both)"
+    echo "WARNING: Plan JSON available but no graph DOT or state — skipping --planfile"
 elif [ -f /tmp/graph.dot ]; then
-    echo "WARNING: Graph DOT available but no plan JSON — skipping --graphfile (terravision requires both)"
+    echo "WARNING: Graph DOT available but no plan JSON — skipping --graphfile"
 fi
 
-# Add statefile for state-only fallback when no changes detected
-if [ -f /tmp/state.json ]; then
+# Add statefile alongside planfile+graphfile for change highlighting fallback
+if [ -f /tmp/state.json ] && [ -f /tmp/graph.dot ]; then
     TV_ARGS+=(--statefile /tmp/state.json)
 fi
 

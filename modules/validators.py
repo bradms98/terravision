@@ -189,13 +189,16 @@ def validate_consistency(tfdata: Dict[str, Any]) -> None:
             sys.exit(1)
 
 
-def validate_pregenerated_inputs(planfile: str, graphfile: str, source: str) -> None:
+def validate_pregenerated_inputs(
+    planfile: str, graphfile: str, source: str, statefile: str = ""
+) -> None:
     """Validate that all required inputs are provided for pre-generated mode.
 
     Args:
         planfile: Path to plan JSON file
         graphfile: Path to graph DOT file
         source: Source path (folder or git URL)
+        statefile: Path to state JSON file (when present, graphfile is optional)
 
     Raises:
         SystemExit: If required inputs are missing or invalid
@@ -209,10 +212,11 @@ def validate_pregenerated_inputs(planfile: str, graphfile: str, source: str) -> 
             )
         )
         sys.exit(1)
-    if planfile and not graphfile:
+    if planfile and not graphfile and not statefile:
         click.echo(
             click.style(
-                "\nERROR: --planfile requires --graphfile and --source.\n",
+                "\nERROR: --planfile requires --graphfile and --source "
+                "(or --statefile for state-only mode).\n",
                 fg="red",
                 bold=True,
             )
