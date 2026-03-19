@@ -14,17 +14,21 @@ import modules.helpers as helpers
 from modules.drawio_shapes import get_group_style, get_resource_style
 
 # Layout constants
-RESOURCE_W, RESOURCE_H = 48, 48
-RESOURCE_SPACING = 30
+ICON_W, ICON_H = 48, 48           # The actual mxCell icon size
+RESOURCE_GAP = 15                  # Minimum gap between resource footprints
 RESOURCES_PER_ROW = 3
-CONTAINER_PAD_TOP = 40
-CONTAINER_PAD_SIDE = 15
-CONTAINER_PAD_BOTTOM = 15
+CONTAINER_PAD_TOP = 60
+CONTAINER_PAD_SIDE = 20
+CONTAINER_PAD_BOTTOM = 20
 AZ_SPACING = 20
-SUBNET_SPACING = 10
+SUBNET_SPACING = 15
 VPC_SPACING = 30
-MIN_CONTAINER_W = 140
-MIN_CONTAINER_H = 80
+MIN_CONTAINER_W = 160
+MIN_CONTAINER_H = 100
+MAX_LABEL_LINE_LEN = 22           # max chars per line in resource labels
+FONT_CHAR_W = 7                   # approximate px per character at fontSize=12
+FONT_LINE_H = 16                  # approximate line height in px
+LABEL_GAP = 4                     # gap between icon bottom and label top
 
 
 # =============================================================================
@@ -164,6 +168,24 @@ class DrawioDocument:
 # LayoutNode — tracks hierarchy for size / position computation
 # =============================================================================
 
+def _estimate_label_footprint(label):
+    """Estimate the pixel footprint of a resource icon + its label.
+
+    Returns (width, height) covering the icon and the text below it.
+    The icon is centered above the label; the footprint width is the
+    wider of icon vs label text.
+    """
+    lines = label.split("<br>") if label else []
+    if not lines:
+        return ICON_W, ICON_H
+    max_line_len = max(len(line) for line in lines)
+    label_w = max_line_len * FONT_CHAR_W
+    label_h = len(lines) * FONT_LINE_H
+    footprint_w = max(ICON_W, label_w)
+    footprint_h = ICON_H + LABEL_GAP + label_h
+    return footprint_w, footprint_h
+
+
 class LayoutNode:
     """A node in the layout tree used to compute sizes and positions."""
 
@@ -230,6 +252,24 @@ def render_drawio(tfdata, outfile, source, layout):
         clean = re.sub(r'\[.*?\]', '', key)
         return helpers.get_no_module_name(clean).split(".")[0]
 
+    def _wrap_line(text, max_len=MAX_LABEL_LINE_LEN):
+        """Wrap a long line at word boundaries using <br> tags."""
+        if len(text) <= max_len:
+            return text
+        # Try splitting on common separators: spaces, underscores, hyphens
+        words = text.replace("_", "_ ").replace("-", "- ").split(" ")
+        lines = []
+        current = ""
+        for word in words:
+            if current and len(current) + len(word) > max_len:
+                lines.append(current.rstrip())
+                current = word
+            else:
+                current += word
+        if current:
+            lines.append(current.rstrip())
+        return "<br>".join(lines)
+
     def _build_label(resource_key, is_group=False):
         """Build a plain-text label for draw.io (no Graphviz markup)."""
         resource_type = _safe_resource_type(resource_key)
@@ -237,8 +277,6 @@ def render_drawio(tfdata, outfile, source, layout):
         name_tag = helpers.get_name_tag(resource_key, tfdata)
         cidr = helpers.get_cidr_label(resource_key, tfdata)
         resource_id = helpers.get_resource_id(resource_key, tfdata)
-
-        is_subnet = "subnet" in resource_type.lower()
 
         if is_group:
             # For containers, use a compact single-line label
@@ -249,10 +287,10 @@ def render_drawio(tfdata, outfile, source, layout):
                 parts.append(cidr)
             return "<br>".join(parts)
         else:
-            # Resource icons: label goes below the icon
-            parts = [type_label]
+            # Resource icons: label goes below the icon, wrap long lines
+            parts = [_wrap_line(type_label)]
             if name_tag:
-                parts.append(name_tag)
+                parts.append(_wrap_line(name_tag))
             if resource_id:
                 parts.append(resource_id)
             return "<br>".join(parts)
@@ -559,21 +597,24 @@ def render_drawio(tfdata, outfile, source, layout):
     def _compute_size(node):
         """Compute width/height for a LayoutNode based on children and resources."""
         if not node.is_group:
-            node.w = RESOURCE_W
-            node.h = RESOURCE_H
+            node.w = ICON_W
+            node.h = ICON_H
             return
 
         # Recursively size children first
         for child in node.children:
             _compute_size(child)
 
-        # Size from resources in this container
+        # Compute resource footprints to determine grid cell size
         n_res = len(node.resources)
         if n_res > 0:
+            footprints = [_estimate_label_footprint(lbl) for _, _, lbl in node.resources]
+            cell_w = max(fw for fw, _ in footprints)
+            cell_h = max(fh for _, fh in footprints)
             rows = (n_res + RESOURCES_PER_ROW - 1) // RESOURCES_PER_ROW
             cols = min(n_res, RESOURCES_PER_ROW)
-            res_block_w = cols * RESOURCE_W + (cols - 1) * RESOURCE_SPACING
-            res_block_h = rows * (RESOURCE_H + 20) + (rows - 1) * RESOURCE_SPACING
+            res_block_w = cols * cell_w + (cols - 1) * RESOURCE_GAP
+            res_block_h = rows * cell_h + (rows - 1) * RESOURCE_GAP
         else:
             res_block_w = 0
             res_block_h = 0
@@ -677,14 +718,23 @@ def render_drawio(tfdata, outfile, source, layout):
     def _place_resources_grid(node, base_x, base_y):
         """Place resource icons in a grid within the parent container.
 
-        Stores positions directly on the node's resource_positions list.
+        Grid cell size is based on the largest footprint (icon + label)
+        among all resources in this container. The icon is centered
+        horizontally within each cell.
         """
         node.resource_positions = []
+        if not node.resources:
+            return
+        footprints = [_estimate_label_footprint(lbl) for _, _, lbl in node.resources]
+        cell_w = max(fw for fw, _ in footprints)
+        cell_h = max(fh for _, fh in footprints)
         for i, (rkey, rtype, rlabel) in enumerate(node.resources):
             col = i % RESOURCES_PER_ROW
             row = i // RESOURCES_PER_ROW
-            rx = base_x + col * (RESOURCE_W + RESOURCE_SPACING)
-            ry = base_y + row * (RESOURCE_H + 20 + RESOURCE_SPACING)
+            # Center the 48px icon within the cell width
+            icon_offset_x = (cell_w - ICON_W) / 2
+            rx = base_x + col * (cell_w + RESOURCE_GAP) + icon_offset_x
+            ry = base_y + row * (cell_h + RESOURCE_GAP)
             node.resource_positions.append((rkey, rtype, rlabel, rx, ry))
 
     _assign_positions(root, 30, 30)
@@ -721,7 +771,7 @@ def render_drawio(tfdata, outfile, source, layout):
         for rkey, rtype, rlabel, rx, ry in node.resource_positions:
             rstyle = get_resource_style(rtype)
             rid = doc.add_resource(
-                node.cell_id, rlabel, rstyle, rx, ry, RESOURCE_W, RESOURCE_H
+                node.cell_id, rlabel, rstyle, rx, ry, ICON_W, ICON_H
             )
             resource_cell_ids[rkey] = rid
 
@@ -732,9 +782,10 @@ def render_drawio(tfdata, outfile, source, layout):
     outer_y = root.y + 60
     for rkey, rtype, rlabel in outer_resources:
         rstyle = get_resource_style(rtype)
-        rid = doc.add_resource("1", rlabel, rstyle, outer_x - 120, outer_y)
+        fw, fh = _estimate_label_footprint(rlabel)
+        rid = doc.add_resource("1", rlabel, rstyle, outer_x - fw - 30, outer_y, ICON_W, ICON_H)
         resource_cell_ids[rkey] = rid
-        outer_y += RESOURCE_H + 40
+        outer_y += fh + 20
 
     # Emit edge resources (Route53, CloudFront, etc.) above or beside the account
     edge_x = root.x + CONTAINER_PAD_SIDE
@@ -743,7 +794,7 @@ def render_drawio(tfdata, outfile, source, layout):
         rstyle = get_resource_style(rtype)
         rid = doc.add_resource("1", rlabel, rstyle, edge_x, edge_y)
         resource_cell_ids[rkey] = rid
-        edge_x += RESOURCE_W + RESOURCE_SPACING + 20
+        edge_x += ICON_W + RESOURCE_GAP + 20
 
     # ------------------------------------------------------------------
     # Phase 5: Emit edges
