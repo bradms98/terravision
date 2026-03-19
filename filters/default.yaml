@@ -1,0 +1,18 @@
+# Default Hidden Resource Types
+# These are too granular for architecture diagrams and are always excluded.
+# Route tables and associations are shown as attributes of subnets/VPCs,
+# not as standalone diagram elements.
+
+exclude:
+  # Routing (shown as subnet/VPC attributes instead)
+  - aws_route_table_association
+  - aws_route
+  - aws_route_table
+  - aws_ec2_transit_gateway_route
+  - aws_ec2_transit_gateway_route_table
+  # RAM (resource sharing plumbing)
+  - aws_ram_resource_share
+  - aws_ram_resource_association
+  - aws_ram_principal_association
+  # Cloud WAN policy (plumbing)
+  - aws_networkmanager_core_network_policy_attachment

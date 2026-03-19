@@ -354,18 +354,18 @@ def render_drawio(tfdata, outfile, source, layout):
                 vpc_prefix_identities[pfx] = ids
                 vpc_all_names |= ids
 
-    # Resource types to hide (too granular for architecture diagrams)
-    HIDE_TYPES = {
-        "aws_route_table_association",
-        "aws_route",
-        "aws_route_table",
-        "aws_ec2_transit_gateway_route",
-        "aws_ec2_transit_gateway_route_table",
-        "aws_ram_resource_share",
-        "aws_ram_resource_association",
-        "aws_ram_principal_association",
-        "aws_networkmanager_core_network_policy_attachment",
-    }
+    # Resource types to hide (loaded from filters/default.yaml)
+    HIDE_TYPES = set()
+    try:
+        import yaml
+        from pathlib import Path
+        _default_filter = Path(__file__).resolve().parent.parent / "filters" / "default.yaml"
+        if _default_filter.exists():
+            with open(_default_filter) as _f:
+                _filter_data = yaml.safe_load(_f)
+            HIDE_TYPES = set(_filter_data.get("exclude", []))
+    except Exception:
+        pass
 
     def _targets_different_vpc(resource_key, current_vpc_identities):
         """Check if a resource key's bracket content references a different VPC.
