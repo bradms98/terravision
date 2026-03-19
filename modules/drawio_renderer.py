@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import click
 
 import modules.helpers as helpers
-from modules.drawio_shapes import get_group_style, get_resource_style
+from modules.drawio_shapes import get_group_style, get_resource_style, apply_change_highlight
 
 # Layout constants
 ICON_W, ICON_H = 48, 48           # The actual mxCell icon size
@@ -932,6 +932,10 @@ def render_drawio(tfdata, outfile, source, layout):
                 "fontStyle=0;fontColor=#5A6C86;whiteSpace=wrap;html=1;"
             )
 
+        # Apply change highlighting to container
+        container_action = tfdata["meta_data"].get(node.key, {}).get("_change_action", "no-op")
+        style = apply_change_highlight(style, container_action)
+
         node.cell_id = doc.add_container(
             parent_cell_id, node.label, style, node.x, node.y, node.w, node.h
         )
@@ -944,6 +948,8 @@ def render_drawio(tfdata, outfile, source, layout):
         # Emit resources inside this container
         for rkey, rtype, rlabel, rx, ry in node.resource_positions:
             rstyle = get_resource_style(rtype)
+            action = tfdata["meta_data"].get(rkey, {}).get("_change_action", "no-op")
+            rstyle = apply_change_highlight(rstyle, action)
             rid = doc.add_resource(
                 node.cell_id, rlabel, rstyle, rx, ry, ICON_W, ICON_H
             )
@@ -957,6 +963,8 @@ def render_drawio(tfdata, outfile, source, layout):
     outer_y = root.y + 60
     for rkey, rtype, rlabel in outer_resources:
         rstyle = get_resource_style(rtype)
+        action = tfdata["meta_data"].get(rkey, {}).get("_change_action", "no-op")
+        rstyle = apply_change_highlight(rstyle, action)
         fw, fh = _estimate_label_footprint(rlabel)
         if rtype == "tv_aws_internet":
             # Center above the account container
@@ -994,6 +1002,8 @@ def render_drawio(tfdata, outfile, source, layout):
     edge_y = root.y - 80
     for rkey, rtype, rlabel in edge_resources:
         rstyle = get_resource_style(rtype)
+        action = tfdata["meta_data"].get(rkey, {}).get("_change_action", "no-op")
+        rstyle = apply_change_highlight(rstyle, action)
         if rtype == "aws_internet_gateway":
             # Place straddling the top border of the connected VPC
             vpc_node = _find_connected_vpc_node(rkey)

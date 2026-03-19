@@ -55,6 +55,43 @@ scalr get-json-output -plan="${PLAN_ID}" > /tmp/plan.json 2>/dev/null || {
     rm -f /tmp/plan.json
 }
 
+# Check if the plan has real changes (non no-op)
+HAS_CHANGES="no"
+if [ -f /tmp/plan.json ]; then
+    HAS_CHANGES=$(python3 -c "
+import json, sys
+try:
+    data = json.load(open('/tmp/plan.json'))
+    changes = [c for c in data.get('resource_changes', [])
+               if c.get('change',{}).get('actions') != ['no-op']]
+    print('yes' if changes else 'no')
+except Exception:
+    print('no')
+" 2>/dev/null || echo "no")
+fi
+
+if [ "$HAS_CHANGES" = "no" ]; then
+    echo "==> No pending changes detected — fetching state from Scalr as fallback"
+    STATE_VERSION_JSON=$(scalr get-current-state-version -workspace="${WORKSPACE_ID}" 2>/dev/null || true)
+    if [ -n "$STATE_VERSION_JSON" ] && [ "$STATE_VERSION_JSON" != "null" ]; then
+        STATE_VERSION_ID=$(echo "$STATE_VERSION_JSON" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+if isinstance(data, dict):
+    print(data.get('id', ''))
+elif isinstance(data, list) and len(data) > 0:
+    print(data[0].get('id', ''))
+" 2>/dev/null || true)
+        if [ -n "$STATE_VERSION_ID" ]; then
+            echo "    State version ID: ${STATE_VERSION_ID}"
+            scalr get-state-version-download -state-version="${STATE_VERSION_ID}" > /tmp/state.json 2>/dev/null || {
+                echo "WARNING: Could not download state file"
+                rm -f /tmp/state.json
+            }
+        fi
+    fi
+fi
+
 echo "==> Generating terraform graph from ${SOURCE_DIR}"
 cd "${SOURCE_DIR}"
 terraform init -backend=false -input=false -no-color > /dev/null 2>&1 || true
@@ -91,6 +128,11 @@ elif [ -f /tmp/plan.json ]; then
     echo "WARNING: Plan JSON available but no graph DOT — skipping --planfile (terravision requires both)"
 elif [ -f /tmp/graph.dot ]; then
     echo "WARNING: Graph DOT available but no plan JSON — skipping --graphfile (terravision requires both)"
+fi
+
+# Add statefile for state-only fallback when no changes detected
+if [ -f /tmp/state.json ]; then
+    TV_ARGS+=(--statefile /tmp/state.json)
 fi
 
 # Add filter unless explicitly disabled

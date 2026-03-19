@@ -91,23 +91,21 @@ def validate_planfile(planfile: str) -> dict:
     if "resource_changes" not in plandata:
         click.echo(
             click.style(
-                "\nERROR: Not a Terraform plan JSON. Missing 'resource_changes' key. "
-                "Generate with: terraform show -json tfplan.bin > plan.json\n",
-                fg="red",
-                bold=True,
+                "\nWARNING: Plan JSON has no 'resource_changes' key. "
+                "Will attempt state-only fallback if --statefile is provided.\n",
+                fg="yellow",
             )
         )
-        sys.exit(1)
+        plandata["resource_changes"] = []
 
     if len(plandata["resource_changes"]) == 0:
         click.echo(
             click.style(
-                "\nERROR: No resources found in plan. The plan contains zero resource changes.\n",
-                fg="red",
-                bold=True,
+                "\nWARNING: No resource changes in plan. "
+                "Will attempt state-only fallback if --statefile is provided.\n",
+                fg="yellow",
             )
         )
-        sys.exit(1)
 
     format_version = plandata.get("format_version", "")
     if format_version and not format_version.startswith("1."):
@@ -256,3 +254,52 @@ def validate_pregenerated_inputs(planfile: str, graphfile: str, source: str) -> 
             )
         )
         sys.exit(1)
+
+
+def validate_statefile(path: str) -> dict:
+    """Load and validate a Terraform state file (tfstate v4).
+
+    Args:
+        path: Path to the state JSON file
+
+    Returns:
+        Parsed state data dictionary
+
+    Raises:
+        SystemExit: If the file is invalid or unsupported version
+    """
+    try:
+        with open(path, "r") as f:
+            state_data = json.load(f)
+    except (json.JSONDecodeError, OSError) as e:
+        click.echo(
+            click.style(
+                f"\nERROR: Cannot read state file: {e}\n",
+                fg="red",
+                bold=True,
+            )
+        )
+        sys.exit(1)
+
+    if state_data.get("version") != 4:
+        click.echo(
+            click.style(
+                f"\nERROR: Unsupported state file version "
+                f"(got {state_data.get('version')}, expected 4).\n",
+                fg="red",
+                bold=True,
+            )
+        )
+        sys.exit(1)
+
+    if "resources" not in state_data:
+        click.echo(
+            click.style(
+                "\nERROR: State file has no 'resources' key.\n",
+                fg="red",
+                bold=True,
+            )
+        )
+        sys.exit(1)
+
+    return state_data

@@ -220,3 +220,37 @@ def get_resource_style(resource_type):
         Style string (falls back to generic AWS icon).
     """
     return RESOURCE_SHAPES.get(resource_type, FALLBACK_RESOURCE_STYLE)
+
+
+# =============================================================================
+# Change highlighting (create / delete / update borders)
+# =============================================================================
+
+CHANGE_HIGHLIGHT = {
+    "create": "strokeColor=#00CC00;strokeWidth=3;",   # green border
+    "delete": "strokeColor=#FF0000;strokeWidth=3;",   # red border
+    "update": "strokeColor=#FF9900;strokeWidth=3;",   # orange border
+    "no-op":  "",                                       # unchanged
+}
+
+
+def apply_change_highlight(base_style: str, action: str) -> str:
+    """Add a colored border to a draw.io style string to indicate change action.
+
+    Preserves the AWS service category fillColor while adding a visible
+    strokeColor/strokeWidth overlay.
+
+    Args:
+        base_style: Original draw.io style string.
+        action: One of 'create', 'delete', 'update', 'no-op'.
+
+    Returns:
+        Modified style string with highlight applied (or unchanged for no-op).
+    """
+    suffix = CHANGE_HIGHLIGHT.get(action, "")
+    if not suffix:
+        return base_style
+    # Remove any existing strokeColor/strokeWidth so ours wins
+    parts = [p for p in base_style.rstrip(";").split(";")
+             if not p.startswith("strokeColor=") and not p.startswith("strokeWidth=")]
+    return ";".join(parts) + ";" + suffix

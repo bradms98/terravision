@@ -13,6 +13,7 @@ import modules.tfwrapper as tfwrapper
 import modules.resource_handlers as resource_handlers
 import modules.llm as llm
 import modules.validators as validators
+import modules.state_converter as state_converter
 from modules.config_loader import load_config
 from modules.provider_detector import detect_providers
 from importlib.metadata import version
@@ -97,6 +98,7 @@ def compile_tfdata(
     annotate: str = "",
     planfile: str = "",
     graphfile: str = "",
+    statefile: str = "",
 ) -> Dict[str, Any]:
     """Compile Terraform data from source files into enriched graph dictionary.
 
@@ -108,6 +110,7 @@ def compile_tfdata(
         annotate: Path to custom annotations YAML file
         planfile: Path to pre-generated Terraform plan JSON file
         graphfile: Path to pre-generated Terraform graph DOT file
+        statefile: Path to Terraform state JSON file (fallback when no plan changes)
 
     Returns:
         Enriched tfdata dictionary with graphdict and metadata
@@ -129,6 +132,44 @@ def compile_tfdata(
         tfdata = tfwrapper.process_terraform_source(
             source, varfile, workspace, annotate, debug
         )
+
+    # State-only fallback: when plan has no resource_changes and a statefile
+    # is provided, populate synthetic entries from the state file.
+    if (
+        not tfdata.get("tf_resources_created")
+        and statefile
+    ):
+        click.echo(
+            click.style(
+                "\nNo resource changes in plan — using state file as fallback.\n",
+                fg="cyan",
+                bold=True,
+            )
+        )
+        state_data = validators.validate_statefile(statefile)
+        synthetic_changes = state_converter.state_to_resource_changes(state_data)
+        if not synthetic_changes:
+            click.echo(
+                click.style(
+                    "\nERROR: State file contains no managed resources.\n",
+                    fg="red",
+                    bold=True,
+                )
+            )
+            sys.exit(1)
+        tfdata["tf_resources_created"] = synthetic_changes
+        # Provide prior_state for inject_data_source_nodes
+        if "plandata" not in tfdata:
+            tfdata["plandata"] = {}
+        tfdata["plandata"]["prior_state"] = state_converter.state_to_prior_state(state_data)
+        # Re-run graph building since tf_resources_created was empty on first pass
+        if tfdata.get("tfgraph"):
+            tfdata = tfwrapper.tf_makegraph(tfdata, debug)
+        else:
+            tfdata = tfwrapper.setup_tfdata(tfdata)
+        import copy
+        tfdata["original_graphdict"] = copy.deepcopy(tfdata["graphdict"])
+        tfdata["original_metadata"] = copy.deepcopy(tfdata["meta_data"])
 
     # Detect cloud provider and store in tfdata (multi-cloud support)
     if "all_resource" in tfdata and "provider_detection" not in tfdata:
@@ -262,6 +303,12 @@ def cli() -> None:
     type=click.Choice(["auto", "grid"], case_sensitive=False),
     help="Layout engine: grid (dot, nested containers) or auto (neato, force-directed)",
 )
+@click.option(
+    "--statefile",
+    default="",
+    type=click.Path(),
+    help="Path to Terraform state JSON (fallback when plan has no changes)",
+)
 def draw(
     debug: bool,
     source: str,
@@ -278,6 +325,7 @@ def draw(
     planfile: str,
     graphfile: str,
     layout: str,
+    statefile: str,
 ) -> None:
     """Draw architecture diagram from Terraform code.
 
@@ -296,6 +344,7 @@ def draw(
         planfile: Path to pre-generated Terraform plan JSON file
         graphfile: Path to pre-generated Terraform graph DOT file
         layout: Layout mode (grid or auto)
+        statefile: Path to Terraform state JSON (fallback when plan has no changes)
     """
     if not debug:
         sys.excepthook = my_excepthook
@@ -309,7 +358,7 @@ def draw(
         )
     preflight_check(aibackend if not planfile else None)
     tfdata = compile_tfdata(
-        source, varfile, workspace, debug, annotate, planfile, graphfile
+        source, varfile, workspace, debug, annotate, planfile, graphfile, statefile
     )
     # Pass to LLM if this is not a pregraphed JSON
     if "all_resource" in tfdata and aibackend:

@@ -327,12 +327,12 @@ def make_tf_data(
     else:
         click.echo(
             click.style(
-                f"\nERROR: Invalid output from 'terraform plan' command. Try using the terraform CLI first to check source actually generates resources and has no errors.",
-                fg="red",
-                bold=True,
+                "\nWARNING: Plan contains no resource changes. "
+                "State-only fallback will be used if a statefile is available.",
+                fg="yellow",
             )
         )
-        exit()
+        tfdata["tf_resources_created"] = []
     tfdata["tfgraph"] = graphdata
     return tfdata
 
@@ -364,6 +364,21 @@ def setup_tfdata(tfdata: Dict[str, Any]) -> Dict[str, Any]:
             detected_provider = max(provider_counts, key=provider_counts.get)
 
     if not detected_provider:
+        if not tfdata.get("tf_resources_created"):
+            # Empty resources — state-only fallback will populate later
+            click.echo(
+                click.style(
+                    "No resources to process yet — awaiting state fallback.",
+                    fg="yellow",
+                )
+            )
+            tfdata.setdefault("graphdict", dict())
+            tfdata.setdefault("meta_data", dict())
+            tfdata.setdefault("all_output", dict())
+            tfdata.setdefault("node_list", list())
+            tfdata.setdefault("hidden", [])
+            tfdata.setdefault("annotations", dict())
+            return tfdata
         # Cannot detect provider at this stage - this is fatal
         raise provider_detector.ProviderDetectionError(
             "Could not detect cloud provider from Terraform plan. "
@@ -396,12 +411,23 @@ def setup_tfdata(tfdata: Dict[str, Any]) -> Dict[str, Any]:
             tfdata["graphdict"][node] = list()
             tfdata["node_list"].append(node)
             # Collect resource metadata from plan
+            # For deleted resources, "after" is null — use "before" so they
+            # still appear on the diagram with red highlighting.
             details = object["change"]["after"]
+            if details is None and object["change"].get("before"):
+                details = object["change"]["before"]
             if details is not None:
                 # Mark fields that are "known after apply" without overwriting real values
-                for k, v in object["change"]["after_unknown"].items():
+                after_unknown = object["change"].get("after_unknown", {})
+                for k, v in after_unknown.items():
                     if k not in details or details[k] is None:
                         details[k] = v
+                # Store the change action for highlighting
+                actions = object.get("change", {}).get("actions", ["no-op"])
+                if len(actions) == 1:
+                    details["_change_action"] = actions[0]
+                else:
+                    details["_change_action"] = "update"
                 # Add module name if resource is in a module
                 if "module." in object["address"]:
                     modname = (
@@ -484,6 +510,10 @@ def tf_makegraph(tfdata: Dict[str, Any], debug: bool) -> Dict[str, Any]:
             detected_provider = max(provider_counts, key=provider_counts.get)
 
     if not detected_provider:
+        if not tfdata.get("tf_resources_created"):
+            # Empty resources — state-only fallback will populate later
+            tfdata = setup_tfdata(tfdata)
+            return tfdata
         # Cannot detect provider at this stage - this is fatal
         raise provider_detector.ProviderDetectionError(
             "Could not detect cloud provider from Terraform plan. "
