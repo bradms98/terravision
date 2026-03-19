@@ -23,4 +23,3 @@ __pycache__/
 Dockerfile
 poetry.lock
 LICENSE
-README.md
