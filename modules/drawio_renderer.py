@@ -452,8 +452,9 @@ def render_drawio(tfdata, outfile, source, layout):
             if child_type in HIDE_TYPES:
                 continue
 
-            # --- At VPC level, skip route tables (already promoted into subnets) ---
-            if resource_type == "aws_vpc" and child_type == "aws_route_table":
+            # --- At VPC level, skip route tables (promoted into subnets) and
+            # IGW (positioned as edge resource straddling VPC border) ---
+            if resource_type == "aws_vpc" and child_type in ("aws_route_table", "aws_internet_gateway"):
                 continue
 
             # --- Cross-VPC filter ---
@@ -495,6 +496,17 @@ def render_drawio(tfdata, outfile, source, layout):
             node.resources.append((child_key, child_type, rlabel))
             assigned_resources.add(child_key)
 
+        # Sort: regular resources first, then route tables, then networkmanager
+        # (networkmanager renders in a separate horizontal row at the bottom)
+        if node.resources:
+            def _resource_sort_key(r):
+                if r[1].startswith("aws_networkmanager_"):
+                    return 2
+                if r[1] == "aws_route_table":
+                    return 1
+                return 0
+            node.resources.sort(key=_resource_sort_key)
+
         return node
 
     # Find the root of the hierarchy (account node injected by _inject_region_account_hierarchy)
@@ -523,11 +535,11 @@ def render_drawio(tfdata, outfile, source, layout):
     edge_resources = []
     for resource_key in graphdict:
         rtype = _safe_resource_type(resource_key)
-        if rtype in OUTER_NODES and resource_key not in built_nodes:
+        if rtype in OUTER_NODES and resource_key not in built_nodes and resource_key not in assigned_resources:
             rlabel = _build_label(resource_key, is_group=False)
             outer_resources.append((resource_key, rtype, rlabel))
             built_nodes[resource_key] = LayoutNode(resource_key, rtype, rlabel)
-        elif any(rtype.startswith(e) for e in EDGE_NODES) and resource_key not in built_nodes:
+        elif any(rtype.startswith(e) for e in EDGE_NODES) and resource_key not in built_nodes and resource_key not in assigned_resources:
             rlabel = _build_label(resource_key, is_group=False)
             edge_resources.append((resource_key, rtype, rlabel))
             built_nodes[resource_key] = LayoutNode(resource_key, rtype, rlabel)
@@ -605,19 +617,29 @@ def render_drawio(tfdata, outfile, source, layout):
         for child in node.children:
             _compute_size(child)
 
-        # Compute resource footprints to determine grid cell size
-        n_res = len(node.resources)
-        if n_res > 0:
-            footprints = [_estimate_label_footprint(lbl) for _, _, lbl in node.resources]
-            cell_w = max(fw for fw, _ in footprints)
-            cell_h = max(fh for _, fh in footprints)
-            rows = (n_res + RESOURCES_PER_ROW - 1) // RESOURCES_PER_ROW
-            cols = min(n_res, RESOURCES_PER_ROW)
-            res_block_w = cols * cell_w + (cols - 1) * RESOURCE_GAP
-            res_block_h = rows * cell_h + (rows - 1) * RESOURCE_GAP
-        else:
-            res_block_w = 0
-            res_block_h = 0
+        # Compute resource footprints, splitting networkmanager into separate row
+        regular_res = [r for r in node.resources if not r[1].startswith("aws_networkmanager_")]
+        nm_res = [r for r in node.resources if r[1].startswith("aws_networkmanager_")]
+
+        res_block_w = 0
+        res_block_h = 0
+        if regular_res:
+            reg_fp = [_estimate_label_footprint(lbl) for _, _, lbl in regular_res]
+            reg_cell_w = max(fw for fw, _ in reg_fp)
+            reg_cell_h = max(fh for _, fh in reg_fp)
+            reg_rows = (len(regular_res) + RESOURCES_PER_ROW - 1) // RESOURCES_PER_ROW
+            reg_cols = min(len(regular_res), RESOURCES_PER_ROW)
+            res_block_w = reg_cols * reg_cell_w + (reg_cols - 1) * RESOURCE_GAP
+            res_block_h = reg_rows * reg_cell_h + (reg_rows - 1) * RESOURCE_GAP
+        if nm_res:
+            nm_fp = [_estimate_label_footprint(lbl) for _, _, lbl in nm_res]
+            nm_cell_w = max(fw for fw, _ in nm_fp)
+            nm_cell_h = max(fh for _, fh in nm_fp)
+            nm_row_w = len(nm_res) * nm_cell_w + (len(nm_res) - 1) * RESOURCE_GAP
+            res_block_w = max(res_block_w, nm_row_w)
+            if res_block_h > 0:
+                res_block_h += RESOURCE_GAP
+            res_block_h += nm_cell_h
 
         # Determine arrangement of child containers
         rtype = node.resource_type
@@ -662,6 +684,17 @@ def render_drawio(tfdata, outfile, source, layout):
 
     _compute_size(root)
 
+    # Equalize subnet widths within each AZ so columns look uniform
+    def _equalize_subnet_widths(node):
+        if node.resource_type in ("aws_az", "tv_aws_az") and node.children:
+            max_w = max(c.w for c in node.children)
+            for c in node.children:
+                c.w = max_w
+        for child in node.children:
+            _equalize_subnet_widths(child)
+
+    _equalize_subnet_widths(root)
+
     # ------------------------------------------------------------------
     # Phase 3: Assign positions top-down (parent-relative coords)
     # ------------------------------------------------------------------
@@ -705,39 +738,98 @@ def render_drawio(tfdata, outfile, source, layout):
         if rtype not in ("aws_vpc",) and node.resources:
             child_bottom = CONTAINER_PAD_TOP
             if node.children:
-                child_bottom += max(
-                    (c.y - node.y + c.h for c in node.children),
-                    default=0,
-                )
                 child_bottom = CONTAINER_PAD_TOP + max(
                     (c.h for c in node.children), default=0
                 )
                 child_bottom += SUBNET_SPACING
             _place_resources_grid(node, CONTAINER_PAD_SIDE, child_bottom)
 
+            # Center TGW resources horizontally within the region container
+            if rtype == "tv_aws_region":
+                tgw_positions = [
+                    (i, rp) for i, rp in enumerate(node.resource_positions)
+                    if rp[1].startswith("aws_ec2_transit_gateway")
+                ]
+                if tgw_positions:
+                    tgw_fps = [_estimate_label_footprint(rp[2]) for _, rp in tgw_positions]
+                    total_w = sum(fw for fw, _ in tgw_fps) + (len(tgw_fps) - 1) * RESOURCE_GAP
+                    start_x = (node.w - total_w) / 2
+                    for j, (idx, (rkey, rt, rl, rx, ry)) in enumerate(tgw_positions):
+                        fw, _ = tgw_fps[j]
+                        new_rx = start_x + sum(tgw_fps[k][0] + RESOURCE_GAP for k in range(j))
+                        new_rx += (fw - ICON_W) / 2  # center icon in footprint
+                        node.resource_positions[idx] = (rkey, rt, rl, new_rx, ry)
+
     def _place_resources_grid(node, base_x, base_y):
         """Place resource icons in a grid within the parent container.
 
         Grid cell size is based on the largest footprint (icon + label)
         among all resources in this container. The icon is centered
-        horizontally within each cell.
+        horizontally within each cell. Networkmanager resources are placed
+        in a separate horizontal row at the bottom, left-aligned.
         """
         node.resource_positions = []
         if not node.resources:
             return
-        footprints = [_estimate_label_footprint(lbl) for _, _, lbl in node.resources]
-        cell_w = max(fw for fw, _ in footprints)
-        cell_h = max(fh for _, fh in footprints)
-        for i, (rkey, rtype, rlabel) in enumerate(node.resources):
-            col = i % RESOURCES_PER_ROW
-            row = i // RESOURCES_PER_ROW
-            # Center the 48px icon within the cell width
-            icon_offset_x = (cell_w - ICON_W) / 2
-            rx = base_x + col * (cell_w + RESOURCE_GAP) + icon_offset_x
-            ry = base_y + row * (cell_h + RESOURCE_GAP)
-            node.resource_positions.append((rkey, rtype, rlabel, rx, ry))
+
+        # Split into regular resources and networkmanager resources
+        regular = [(r, _estimate_label_footprint(r[2])) for r in node.resources
+                    if not r[1].startswith("aws_networkmanager_")]
+        nm_res = [(r, _estimate_label_footprint(r[2])) for r in node.resources
+                   if r[1].startswith("aws_networkmanager_")]
+
+        # Place regular resources in the standard grid
+        cur_y = base_y
+        if regular:
+            cell_w = max(fw for _, (fw, _) in regular)
+            cell_h = max(fh for _, (_, fh) in regular)
+            for i, ((rkey, rtype, rlabel), _) in enumerate(regular):
+                col = i % RESOURCES_PER_ROW
+                row = i // RESOURCES_PER_ROW
+                icon_offset_x = (cell_w - ICON_W) / 2
+                rx = base_x + col * (cell_w + RESOURCE_GAP) + icon_offset_x
+                ry = base_y + row * (cell_h + RESOURCE_GAP)
+                node.resource_positions.append((rkey, rtype, rlabel, rx, ry))
+            n_rows = (len(regular) + RESOURCES_PER_ROW - 1) // RESOURCES_PER_ROW
+            cur_y = base_y + n_rows * (cell_h + RESOURCE_GAP)
+
+        # Place networkmanager resources in a horizontal row below
+        if nm_res:
+            nm_cell_w = max(fw for _, (fw, _) in nm_res)
+            nm_cell_h = max(fh for _, (_, fh) in nm_res)
+            if regular:
+                cur_y += RESOURCE_GAP  # extra gap before nm row
+            for i, ((rkey, rtype, rlabel), _) in enumerate(nm_res):
+                icon_offset_x = (nm_cell_w - ICON_W) / 2
+                rx = base_x + i * (nm_cell_w + RESOURCE_GAP) + icon_offset_x
+                ry = cur_y
+                node.resource_positions.append((rkey, rtype, rlabel, rx, ry))
 
     _assign_positions(root, 30, 30)
+
+    def _is_ancestor(ancestor_node, descendant_node):
+        """Check if ancestor_node contains descendant_node in its tree."""
+        if ancestor_node is descendant_node:
+            return True
+        for child in ancestor_node.children:
+            if _is_ancestor(child, descendant_node):
+                return True
+        return False
+
+    def _absolute_position(target_node):
+        """Compute absolute (page-level) x, y of a node by walking from root."""
+        def _walk(node, ax, ay):
+            ax += node.x
+            ay += node.y
+            if node is target_node:
+                return ax, ay
+            for child in node.children:
+                result = _walk(child, ax, ay)
+                if result:
+                    return result
+            return None
+        result = _walk(root, 0, 0)
+        return result if result else (target_node.x, target_node.y)
 
     # ------------------------------------------------------------------
     # Phase 4: Emit cells
@@ -778,23 +870,63 @@ def render_drawio(tfdata, outfile, source, layout):
     _emit_node(root)
 
     # Emit outer resources (users, internet) to the left of the account box
+    # Internet icon is centered above the account container
     outer_x = 30
     outer_y = root.y + 60
     for rkey, rtype, rlabel in outer_resources:
         rstyle = get_resource_style(rtype)
         fw, fh = _estimate_label_footprint(rlabel)
-        rid = doc.add_resource("1", rlabel, rstyle, outer_x - fw - 30, outer_y, ICON_W, ICON_H)
+        if rtype == "tv_aws_internet":
+            # Center above the account container
+            internet_x = root.x + root.w / 2 - ICON_W / 2
+            internet_y = root.y - fh - 20
+            rid = doc.add_resource("1", rlabel, rstyle, internet_x, internet_y, ICON_W, ICON_H)
+        else:
+            rid = doc.add_resource("1", rlabel, rstyle, outer_x - fw - 30, outer_y, ICON_W, ICON_H)
+            outer_y += fh + 20
         resource_cell_ids[rkey] = rid
-        outer_y += fh + 20
 
     # Emit edge resources (Route53, CloudFront, etc.) above or beside the account
+    # IGW is special: centered at the top of its connected VPC, straddling the border
+    def _find_connected_vpc_node(resource_key):
+        """Find the VPC LayoutNode that this resource connects to.
+
+        Checks both the resource's own connections AND VPCs that list
+        a matching resource type as a child (handles bare vs module-prefixed keys).
+        """
+        # Direct check: resource connects to a VPC
+        for conn in graphdict.get(resource_key, []):
+            conn_type = _safe_resource_type(conn)
+            if conn_type == "aws_vpc" and conn in built_nodes:
+                return built_nodes[conn]
+        # Reverse check: find a VPC whose children include this resource type
+        res_type = _safe_resource_type(resource_key)
+        for k, children in graphdict.items():
+            if _safe_resource_type(k) == "aws_vpc" and k in built_nodes:
+                for child in children:
+                    if _safe_resource_type(child) == res_type:
+                        return built_nodes[k]
+        return None
+
     edge_x = root.x + CONTAINER_PAD_SIDE
     edge_y = root.y - 80
     for rkey, rtype, rlabel in edge_resources:
         rstyle = get_resource_style(rtype)
-        rid = doc.add_resource("1", rlabel, rstyle, edge_x, edge_y)
+        if rtype == "aws_internet_gateway":
+            # Place straddling the top border of the connected VPC
+            vpc_node = _find_connected_vpc_node(rkey)
+            if vpc_node and vpc_node.cell_id:
+                abs_x, abs_y = _absolute_position(vpc_node)
+                igw_x = abs_x + vpc_node.w / 2 - ICON_W / 2
+                igw_y = abs_y - ICON_H / 2
+                rid = doc.add_resource("1", rlabel, rstyle, igw_x, igw_y, ICON_W, ICON_H)
+            else:
+                rid = doc.add_resource("1", rlabel, rstyle, edge_x, edge_y, ICON_W, ICON_H)
+                edge_x += ICON_W + RESOURCE_GAP + 20
+        else:
+            rid = doc.add_resource("1", rlabel, rstyle, edge_x, edge_y, ICON_W, ICON_H)
+            edge_x += ICON_W + RESOURCE_GAP + 20
         resource_cell_ids[rkey] = rid
-        edge_x += ICON_W + RESOURCE_GAP + 20
 
     # ------------------------------------------------------------------
     # Phase 5: Emit edges
