@@ -1,0 +1,73 @@
+# yamllint disable rule:line-length
+---
+name: Generate Architecture Diagram
+
+on:
+  pull_request:
+    branches: [main]
+    paths: ['**.tf', '**.tfvars']
+  push:
+    branches: [main]
+    paths: ['**.tf', '**.tfvars']
+  repository_dispatch:
+    types: [scalr-apply-complete]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: diagram-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  generate-diagram:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Determine run status filter
+        id: config
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "filter=planned" >> "$GITHUB_OUTPUT"
+            echo "format=drawio" >> "$GITHUB_OUTPUT"
+          else
+            echo "filter=applied" >> "$GITHUB_OUTPUT"
+            echo "format=both" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Generate diagram
+        run: |
+          docker run --rm \
+            -e TF_API_TOKEN="${{ secrets.TF_API_TOKEN }}" \
+            -e SCALR_HOSTNAME="${{ vars.SCALR_HOSTNAME }}" \
+            -e WORKSPACE_ID="${{ vars.WORKSPACE_ID }}" \
+            -e RUN_STATUS_FILTER="${{ steps.config.outputs.filter }}" \
+            -e OUTPUT_FORMAT="${{ steps.config.outputs.format }}" \
+            -e OUTPUT_PATH="docs/architecture" \
+            -e DIAGRAM_FILTER="network" \
+            -v "${{ github.workspace }}:/workspace/source" \
+            ghcr.io/bradms98/terravision:latest
+
+      - name: Commit diagram changes
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Update architecture diagram [skip ci]"
+          file_pattern: "docs/architecture/*"
+
+      - name: Comment on PR with diagram preview
+        if: github.event_name == 'pull_request'
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          body: |
+            ## Architecture Diagram Updated
+
+            The architecture diagram has been updated based on the Terraform changes in this PR.
+
+            📎 See `docs/architecture/architecture.drawio` in this branch for the latest diagram.

@@ -1,39 +1,39 @@
-FROM alpine:3.23 AS base
+FROM python:3.13-slim
 
 ARG TERRAFORM_VERSION=1.10.5
+ARG SCALR_CLI_VERSION=0.17.7
 ARG TARGETARCH
 
-# Install required packages (graphviz-dev needed for pygraphviz/graphviz2drawio)
-RUN apk update && \
-    apk add --no-cache git python3 py3-pip graphviz graphviz-dev gcc musl-dev python3-dev binutils curl unzip && \
-    rm /usr/lib/python*/EXTERNALLY-MANAGED && \
-    python3 -m ensurepip && \
-    ARCH="${TARGETARCH:-$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')}" && \
-    curl -fsSL "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_${ARCH}.zip" -o /tmp/terraform.zip && \
+# System deps: graphviz, build tools, git, curl
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        graphviz libgraphviz-dev gcc libc6-dev git curl unzip && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install Terraform CLI
+RUN ARCH="${TARGETARCH:-$(dpkg --print-architecture)}" && \
+    curl -fsSL "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_${ARCH}.zip" \
+        -o /tmp/terraform.zip && \
     unzip /tmp/terraform.zip -d /usr/local/bin/ && \
-    rm /tmp/terraform.zip && \
-    addgroup -S -g 1000 terravision && \
-    adduser -S -u 1000 -G terravision terravision && \
-    rm -rf /root/.cache && \
-    rm -rf /var/cache/apk/*
+    rm /tmp/terraform.zip
 
-USER terravision
+# Install Scalr CLI
+RUN ARCH="${TARGETARCH:-$(dpkg --print-architecture)}" && \
+    curl -fsSL "https://github.com/Scalr/scalr-cli/releases/download/v${SCALR_CLI_VERSION}/scalr-cli_${SCALR_CLI_VERSION}_linux_${ARCH}.zip" \
+        -o /tmp/scalr-cli.zip && \
+    unzip /tmp/scalr-cli.zip -d /usr/local/bin/ && \
+    chmod +x /usr/local/bin/scalr && \
+    rm /tmp/scalr-cli.zip
 
-FROM base
+# Install terravision and Python dependencies
+COPY . /opt/terravision
+RUN cd /opt/terravision && pip install --no-cache-dir --break-system-packages .
 
-ENV PATH=/home/terravision/.local/bin:$PATH
+# Copy entrypoint
+COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
 
-# Install terravision and dependencies
-COPY --chown=terravision:terravision . /opt/terravision
-RUN cd /opt/terravision && pip install .
+RUN mkdir -p /workspace
+WORKDIR /workspace
 
-USER root
-
-RUN mkdir -p /project && \
-    chown -R terravision:terravision /project
-
-USER terravision
-
-WORKDIR /project
-
-ENTRYPOINT [ "terravision" ]
+ENTRYPOINT ["entrypoint.sh"]
