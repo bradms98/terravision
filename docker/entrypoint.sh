@@ -84,7 +84,7 @@ elif isinstance(data, list) and len(data) > 0:
 " 2>/dev/null || true)
         if [ -n "$STATE_VERSION_ID" ]; then
             echo "    State version ID: ${STATE_VERSION_ID}"
-            scalr get-state-version-download -state-version="${STATE_VERSION_ID}" > /tmp/state.json 2>/dev/null || {
+            scalr get-state-version-download -state_version="${STATE_VERSION_ID}" > /tmp/state.json 2>/dev/null || {
                 echo "WARNING: Could not download state file"
                 rm -f /tmp/state.json
             }
