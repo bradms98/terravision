@@ -96,9 +96,25 @@ aws_fsx_ontap_file_system = Fsx
 aws_fsx_openzfs_file_system = Fsx
 aws_fsx_windows_file_system = FsxForWindowsFileServer
 aws_glacier_vault = S3Glacier
-aws_s3_bucket = SimpleStorageServiceS3
+# aws_s3_bucket is defined in groups.py as S3BucketGroup (container/cluster)
 aws_s3_bucket_object = SimpleStorageServiceS3
 aws_s3_object = S3Object
 aws_storagegateway_gateway = StorageGateway
 aws_storagegateway_smb_file_share = StorageGateway
 aws_storagegateway_nfs_file_share = StorageGateway
+
+# S3 bucket ancillary resources (rendered inside S3 bucket container)
+aws_s3_bucket_policy = SimpleStorageServiceS3
+aws_s3_bucket_server_side_encryption_configuration = SimpleStorageServiceS3
+aws_s3_bucket_public_access_block = SimpleStorageServiceS3
+aws_s3_bucket_lifecycle_configuration = SimpleStorageServiceS3
+aws_s3_bucket_versioning = SimpleStorageServiceS3
+aws_s3_bucket_ownership_controls = SimpleStorageServiceS3
+aws_s3_bucket_intelligent_tiering_configuration = SimpleStorageServiceS3
+aws_s3_bucket_acl = SimpleStorageServiceS3
+aws_s3_bucket_cors_configuration = SimpleStorageServiceS3
+aws_s3_bucket_logging = SimpleStorageServiceS3
+aws_s3_bucket_notification = SimpleStorageServiceS3
+aws_s3_bucket_object_lock_configuration = SimpleStorageServiceS3
+aws_s3_bucket_replication_configuration = SimpleStorageServiceS3
+aws_s3_bucket_website_configuration = SimpleStorageServiceS3

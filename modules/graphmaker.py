@@ -2306,6 +2306,153 @@ def cleanup_cross_subnet_connections(tfdata: Dict[str, Any]) -> Dict[str, Any]:
     return tfdata
 
 
+def group_s3_bucket_resources(tfdata: Dict[str, Any]) -> Dict[str, Any]:
+    """Group S3 ancillary resources inside their parent S3 bucket container.
+
+    Scans for S3 ancillary resource types (e.g., aws_s3_bucket_policy,
+    aws_s3_bucket_versioning) and moves them into their parent bucket's
+    connection list so they render inside the bucket container.
+
+    Containment is established by:
+    1. Checking existing graph edges (ancillary -> bucket becomes bucket -> ancillary)
+    2. Matching the ancillary resource's 'bucket' metadata attribute to a bucket node
+
+    Args:
+        tfdata: Terraform data dictionary
+
+    Returns:
+        Updated tfdata with S3 ancillary resources grouped under their buckets
+    """
+    constants = _load_config_constants(tfdata)
+    s3_ancillary_types = constants.get("S3_ANCILLARY_TYPES", [])
+    if not s3_ancillary_types:
+        return tfdata
+
+    graphdict = tfdata["graphdict"]
+    meta_data = tfdata.get("meta_data", {})
+
+    # Find all S3 bucket nodes
+    bucket_nodes = [
+        k for k in graphdict
+        if helpers.get_no_module_name(k).startswith("aws_s3_bucket.")
+        and helpers.get_no_module_name(k).split(".")[0] == "aws_s3_bucket"
+    ]
+    if not bucket_nodes:
+        return tfdata
+
+    # Build lookup: bucket name/id -> bucket node for metadata-based matching
+    bucket_lookup = {}
+    for bnode in bucket_nodes:
+        meta = meta_data.get(bnode, {})
+        # The bucket's own 'bucket' attribute is its name
+        bucket_name = meta.get("bucket", "")
+        if bucket_name and isinstance(bucket_name, str):
+            bucket_lookup[bucket_name] = bnode
+        bucket_id = meta.get("id", "")
+        if bucket_id and isinstance(bucket_id, str):
+            bucket_lookup[bucket_id] = bnode
+
+    # Find all S3 ancillary resource nodes
+    ancillary_nodes = []
+    for node in list(graphdict.keys()):
+        node_type = helpers.get_no_module_name(node).split(".")[0]
+        if node_type in s3_ancillary_types:
+            ancillary_nodes.append(node)
+
+    if not ancillary_nodes:
+        return tfdata
+
+    click.echo(
+        click.style(
+            f"\nGrouping {len(ancillary_nodes)} S3 ancillary resource(s) into bucket containers..",
+            fg="white",
+            bold=True,
+        )
+    )
+
+    for ancillary in ancillary_nodes:
+        parent_bucket = None
+
+        # Strategy 1: Check if the ancillary already has an edge to a bucket node
+        # (from Terraform dependency graph). The edge direction is ancillary -> bucket.
+        for conn in list(graphdict.get(ancillary, [])):
+            conn_type = helpers.get_no_module_name(conn).split(".")[0]
+            if conn_type == "aws_s3_bucket":
+                parent_bucket = conn
+                break
+
+        # Strategy 2: Check if a bucket already points to this ancillary (reverse edge)
+        if not parent_bucket:
+            for bnode in bucket_nodes:
+                if ancillary in graphdict.get(bnode, []):
+                    parent_bucket = bnode
+                    break
+
+        # Strategy 3: Match via metadata 'bucket' attribute
+        if not parent_bucket:
+            meta = meta_data.get(ancillary, {})
+            bucket_ref = meta.get("bucket", "")
+            if bucket_ref and isinstance(bucket_ref, str):
+                parent_bucket = bucket_lookup.get(bucket_ref)
+
+        # Strategy 4: Match by Terraform naming convention (same module + name suffix)
+        if not parent_bucket:
+            # Extract module prefix for same-module matching
+            ancillary_parts = ancillary.split(".")
+            ancillary_module = (
+                ".".join(ancillary_parts[:2]) + "."
+                if ancillary.startswith("module.")
+                else ""
+            )
+            for bnode in bucket_nodes:
+                bnode_module = (
+                    ".".join(bnode.split(".")[:2]) + "."
+                    if bnode.startswith("module.")
+                    else ""
+                )
+                if ancillary_module == bnode_module:
+                    # If only one bucket in this module, use it
+                    module_buckets = [
+                        b for b in bucket_nodes
+                        if (
+                            ".".join(b.split(".")[:2]) + "."
+                            if b.startswith("module.")
+                            else ""
+                        ) == ancillary_module
+                    ]
+                    if len(module_buckets) == 1:
+                        parent_bucket = module_buckets[0]
+                        break
+
+        if not parent_bucket:
+            continue
+
+        click.echo(f"   {ancillary} -> {parent_bucket}")
+
+        # Remove ancillary -> bucket edge (it becomes containment instead)
+        if parent_bucket in graphdict.get(ancillary, []):
+            graphdict[ancillary].remove(parent_bucket)
+
+        # Add bucket -> ancillary containment edge
+        if ancillary not in graphdict.get(parent_bucket, []):
+            graphdict.setdefault(parent_bucket, []).append(ancillary)
+
+        # Also remove any reverse edges where bucket points to ancillary
+        # in a non-containment way (these are now containment)
+        # The edge is already set above, so just ensure no duplicates
+
+        # Remove ancillary from other group nodes' children (it belongs to the bucket now)
+        for node, connections in graphdict.items():
+            if node == parent_bucket:
+                continue
+            node_type = helpers.get_no_module_name(node).split(".")[0]
+            group_nodes = constants.get("GROUP_NODES", [])
+            if node_type in group_nodes and ancillary in connections:
+                connections.remove(ancillary)
+
+    return tfdata
+
+
 def scope_subnet_id_resources(tfdata: Dict[str, Any]) -> Dict[str, Any]:
     """Scope resources with subnet_ids metadata to only their correct subnets.
 

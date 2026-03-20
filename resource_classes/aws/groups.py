@@ -197,6 +197,20 @@ class OnPrem(Cluster):
         super().__init__(aws_label, _dir_for_group("OnPrem"), aws_graph_attrs)
 
 
+class S3BucketGroup(Cluster):
+    def __init__(self, label="S3 Bucket", **kwargs):
+        graph_attrs = {
+            "style": "solid",
+            "margin": _margin_for_grid("50"),
+            "pencolor": "#3F8624",
+            "center": "true",
+            "labeljust": "l",
+            "_shift": "0",
+        }
+        s3_label = f'<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0"><TR><TD><img src="{base_path}/resource_images/aws/storage/simple-storage-service-s3-bucket.png"/></TD><TD>{label}</TD></TR></TABLE>>'
+        super().__init__(s3_label, _dir_for_group("S3BucketGroup"), graph_attrs)
+
+
 aws_vpc = VPCgroup
 aws_group = GenericGroup
 aws_account = AWSAccount
@@ -209,3 +223,4 @@ aws_az = AvailabilityZone
 tv_aws_az = AvailabilityZone
 tv_aws_region = RegionGroup
 aws_region = RegionGroup
+aws_s3_bucket = S3BucketGroup
