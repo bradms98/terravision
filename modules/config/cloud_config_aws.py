@@ -210,8 +210,6 @@ AWS_EDGE_NODES = [
     "aws_internet_gateway",
     "aws_api_gateway",
     "aws_apigateway",
-    "aws_cloudwatch_event",
-    "aws_sns_topic",
     "aws_cognito",
     "aws_wafv2",
     "aws_waf",

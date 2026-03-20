@@ -107,7 +107,6 @@ RESOURCE_HANDLER_CONFIGS = {
                     "service_patterns": [
                         "aws_acm_certificate",
                         "aws_cloudwatch_log_group",
-                        "aws_ecr_repository",
                         "aws_efs_file_system",
                         "aws_ssm_parameter",
                         "aws_kms_key",
