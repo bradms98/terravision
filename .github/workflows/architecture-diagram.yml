@@ -25,7 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
         with:
           ref: ${{ github.head_ref || github.ref_name }}
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -55,14 +55,14 @@ jobs:
             ghcr.io/bradms98/terravision:latest
 
       - name: Commit diagram changes
-        uses: stefanzweifel/git-auto-commit-action@v5
+        uses: stefanzweifel/git-auto-commit-action@b863ae1933cb653a53c021fe36dbb774e1fb9403  # v5
         with:
           commit_message: "Update architecture diagram [skip ci]"
           file_pattern: "docs/architecture/*"
 
       - name: Comment on PR with diagram preview
         if: github.event_name == 'pull_request'
-        uses: peter-evans/create-or-update-comment@v4
+        uses: peter-evans/create-or-update-comment@71345be0265236311c031f5c7866368bd1eff043  # v4
         with:
           issue-number: ${{ github.event.pull_request.number }}
           body: |
