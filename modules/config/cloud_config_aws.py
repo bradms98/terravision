@@ -157,8 +157,9 @@ AWS_GROUP_NODES = [
     "aws_appautoscaling_target",
     "aws_autoscaling_group",
     "aws_subnet",
-    "aws_security_group",
     "aws_s3_bucket",
+    "aws_backup_vault",
+    "aws_security_group",
     "tv_aws_onprem",
     "tv_aws_region",
 ]
@@ -443,6 +444,12 @@ AWS_S3_ANCILLARY_TYPES = [
     "aws_s3_bucket_object_lock_configuration",
     "aws_s3_bucket_replication_configuration",
     "aws_s3_bucket_website_configuration",
+]
+
+# Backup vault ancillary resource types that should be grouped inside their parent vault
+AWS_BACKUP_VAULT_ANCILLARY_TYPES = [
+    "aws_backup_vault_lock_configuration",
+    "aws_backup_vault_policy",
 ]
 
 AWS_ACRONYMS_LIST = [

@@ -72,6 +72,17 @@ GROUP_STYLES = {
         "fillColor=none;strokeColor=#5A6C86;dashed=1;verticalAlign=top;"
         "fontStyle=0;fontColor=#5A6C86;whiteSpace=wrap;html=1;"
     ),
+    # Service group container styles (icon + property-list layout)
+    "aws_s3_bucket": (
+        "fillColor=none;strokeColor=#3F8624;dashed=0;"
+        "fontStyle=0;fontColor=#3F8624;whiteSpace=wrap;html=1;"
+        "container=1;collapsible=0;recursiveResize=0;rounded=1;"
+    ),
+    "aws_backup_vault": (
+        "fillColor=none;strokeColor=#E7157B;dashed=0;verticalAlign=top;"
+        "fontStyle=0;fontColor=#E7157B;whiteSpace=wrap;html=1;"
+        "container=1;collapsible=0;recursiveResize=0;rounded=1;"
+    ),
 }
 
 

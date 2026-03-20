@@ -69,6 +69,7 @@ def _enrich_graph_data(
     tfdata = graphmaker.detect_and_set_counts(tfdata)
     tfdata = graphmaker.handle_special_resources(tfdata)
     tfdata = graphmaker.group_s3_bucket_resources(tfdata)
+    tfdata = graphmaker.group_backup_vault_resources(tfdata)
     tfdata = graphmaker.handle_variants(tfdata)
     tfdata = graphmaker.create_multiple_resources(tfdata)
     tfdata = graphmaker.scope_subnet_id_resources(tfdata)

@@ -2453,6 +2453,150 @@ def group_s3_bucket_resources(tfdata: Dict[str, Any]) -> Dict[str, Any]:
     return tfdata
 
 
+def group_backup_vault_resources(tfdata: Dict[str, Any]) -> Dict[str, Any]:
+    """Group Backup vault ancillary resources inside their parent vault container.
+
+    Scans for Backup vault ancillary resource types (e.g., aws_backup_vault_lock_configuration,
+    aws_backup_vault_policy) and moves them into their parent vault's
+    connection list so they render inside the vault container.
+
+    Args:
+        tfdata: Terraform data dictionary
+
+    Returns:
+        Updated tfdata with Backup vault ancillary resources grouped under their vaults
+    """
+    constants = _load_config_constants(tfdata)
+    vault_ancillary_types = constants.get("BACKUP_VAULT_ANCILLARY_TYPES", [])
+    if not vault_ancillary_types:
+        return tfdata
+
+    graphdict = tfdata["graphdict"]
+    meta_data = tfdata.get("meta_data", {})
+
+    # Find all Backup vault nodes
+    vault_nodes = [
+        k for k in graphdict
+        if helpers.get_no_module_name(k).startswith("aws_backup_vault.")
+        and helpers.get_no_module_name(k).split(".")[0] == "aws_backup_vault"
+    ]
+    if not vault_nodes:
+        return tfdata
+
+    # Build lookup: vault name/id -> vault node for metadata-based matching
+    vault_lookup = {}
+    for vnode in vault_nodes:
+        meta = meta_data.get(vnode, {})
+        vault_name = meta.get("name", "")
+        if vault_name and isinstance(vault_name, str):
+            vault_lookup[vault_name] = vnode
+        vault_id = meta.get("id", "")
+        if vault_id and isinstance(vault_id, str):
+            vault_lookup[vault_id] = vnode
+
+    # Find all Backup vault ancillary resource nodes
+    ancillary_nodes = []
+    for node in list(graphdict.keys()):
+        node_type = helpers.get_no_module_name(node).split(".")[0]
+        if node_type in vault_ancillary_types:
+            ancillary_nodes.append(node)
+
+    if not ancillary_nodes:
+        return tfdata
+
+    click.echo(
+        click.style(
+            f"\nGrouping {len(ancillary_nodes)} Backup vault ancillary resource(s) into vault containers..",
+            fg="white",
+            bold=True,
+        )
+    )
+
+    for ancillary in ancillary_nodes:
+        parent_vault = None
+
+        # Strategy 1: Check if the ancillary already has an edge to a vault node
+        for conn in list(graphdict.get(ancillary, [])):
+            conn_type = helpers.get_no_module_name(conn).split(".")[0]
+            if conn_type == "aws_backup_vault":
+                parent_vault = conn
+                break
+
+        # Strategy 2: Check if a vault already points to this ancillary (reverse edge)
+        if not parent_vault:
+            for vnode in vault_nodes:
+                if ancillary in graphdict.get(vnode, []):
+                    parent_vault = vnode
+                    break
+
+        # Strategy 3: Match via metadata 'backup_vault_name' attribute
+        if not parent_vault:
+            meta = meta_data.get(ancillary, {})
+            vault_ref = meta.get("backup_vault_name", "")
+            if vault_ref and isinstance(vault_ref, str):
+                parent_vault = vault_lookup.get(vault_ref)
+
+        # Strategy 4: Match by Terraform naming convention (same module + name suffix)
+        if not parent_vault:
+            ancillary_parts = ancillary.split(".")
+            ancillary_module = (
+                ".".join(ancillary_parts[:2]) + "."
+                if ancillary.startswith("module.")
+                else ""
+            )
+            for vnode in vault_nodes:
+                vnode_module = (
+                    ".".join(vnode.split(".")[:2]) + "."
+                    if vnode.startswith("module.")
+                    else ""
+                )
+                if ancillary_module == vnode_module:
+                    # Match by name: ancillary name often matches vault name
+                    # e.g. aws_backup_vault_policy.prod_daily -> aws_backup_vault.prod_daily
+                    ancillary_name = helpers.get_no_module_name(ancillary).split(".", 1)[-1]
+                    vault_name = helpers.get_no_module_name(vnode).split(".", 1)[-1]
+                    if ancillary_name == vault_name:
+                        parent_vault = vnode
+                        break
+
+            # If name matching didn't work, try single-vault-in-module fallback
+            if not parent_vault and ancillary_module:
+                module_vaults = [
+                    v for v in vault_nodes
+                    if (
+                        ".".join(v.split(".")[:2]) + "."
+                        if v.startswith("module.")
+                        else ""
+                    ) == ancillary_module
+                ]
+                if len(module_vaults) == 1:
+                    parent_vault = module_vaults[0]
+
+        if not parent_vault:
+            continue
+
+        click.echo(f"   {ancillary} -> {parent_vault}")
+
+        # Remove ancillary -> vault edge (it becomes containment instead)
+        if parent_vault in graphdict.get(ancillary, []):
+            graphdict[ancillary].remove(parent_vault)
+
+        # Add vault -> ancillary containment edge
+        if ancillary not in graphdict.get(parent_vault, []):
+            graphdict.setdefault(parent_vault, []).append(ancillary)
+
+        # Remove ancillary from other group nodes' children (it belongs to the vault now)
+        for node, connections in graphdict.items():
+            if node == parent_vault:
+                continue
+            node_type = helpers.get_no_module_name(node).split(".")[0]
+            group_nodes = constants.get("GROUP_NODES", [])
+            if node_type in group_nodes and ancillary in connections:
+                connections.remove(ancillary)
+
+    return tfdata
+
+
 def scope_subnet_id_resources(tfdata: Dict[str, Any]) -> Dict[str, Any]:
     """Scope resources with subnet_ids metadata to only their correct subnets.
 

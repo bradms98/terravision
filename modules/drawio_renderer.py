@@ -17,7 +17,8 @@ from modules.drawio_shapes import get_group_style, get_resource_style, apply_cha
 ICON_W, ICON_H = 48, 48           # The actual mxCell icon size
 RESOURCE_GAP = 15                  # Minimum gap between resource footprints
 RESOURCES_PER_ROW = 3
-REGION_RESOURCES_PER_ROW = 6          # items per row for region-level (non-VPC) resources
+REGION_RESOURCES_PER_ROW = 3          # items per row for region-level (non-VPC) resources
+REGION_MAX_CELL_W = 200               # cap cell width for region/account flat icon grids
 CONTAINER_PAD_TOP = 60
 CONTAINER_PAD_SIDE = 20
 CONTAINER_PAD_BOTTOM = 20
@@ -30,6 +31,29 @@ MAX_LABEL_LINE_LEN = 22           # max chars per line in resource labels
 FONT_CHAR_W = 7                   # approximate px per character at fontSize=12
 FONT_LINE_H = 16                  # approximate line height in px
 LABEL_GAP = 4                     # gap between icon bottom and label top
+
+# Infrastructure group types that use standard container rendering.
+# Any GROUP_NODE not in this set is a "service group" (e.g. S3 bucket,
+# backup vault) rendered with icon + property-list layout.
+INFRASTRUCTURE_GROUP_TYPES = {
+    "aws_vpc", "aws_az", "tv_aws_az", "aws_subnet", "aws_account",
+    "tv_aws_region", "tv_aws_onprem", "aws_autoscaling_group",
+    "aws_appautoscaling_target", "aws_group", "aws_security_group",
+}
+
+# Property-list text cell style for service group containers
+SERVICE_GROUP_TEXT_STYLE = (
+    "text;html=1;align=left;verticalAlign=top;strokeColor=none;"
+    "fillColor=none;fontSize=11;fontColor=#888888;whiteSpace=wrap;"
+    "overflow=hidden;"
+)
+SERVICE_GROUP_CONTAINER_W = 310
+SERVICE_GROUP_ICON_X = 15
+SERVICE_GROUP_ICON_Y = 25
+SERVICE_GROUP_TEXT_X = 100
+SERVICE_GROUP_TEXT_Y = 25
+SERVICE_GROUP_COLUMNS = 3             # columns for grid layout of service group containers
+SERVICE_GROUP_COL_GAP = 15            # horizontal gap between service group columns
 
 
 # =============================================================================
@@ -102,6 +126,24 @@ class DrawioDocument:
         geo.set("y", str(round(y)))
         geo.set("width", "130")
         geo.set("height", "30")
+        geo.set("as", "geometry")
+        self._cells.append((cid, cell))
+        return cid
+
+    def add_styled_text(self, parent_id, text, style, x, y, w, h):
+        """Add a text cell with a custom style and dimensions. Returns its cell ID."""
+        cid = self._new_id()
+        cell = ET.Element("mxCell")
+        cell.set("id", cid)
+        cell.set("value", text)
+        cell.set("style", style)
+        cell.set("parent", str(parent_id))
+        cell.set("vertex", "1")
+        geo = ET.SubElement(cell, "mxGeometry")
+        geo.set("x", str(round(x)))
+        geo.set("y", str(round(y)))
+        geo.set("width", str(round(w)))
+        geo.set("height", str(round(h)))
         geo.set("as", "geometry")
         self._cells.append((cid, cell))
         return cid
@@ -195,9 +237,11 @@ class LayoutNode:
         self.resource_type = resource_type
         self.label = label
         self.is_group = is_group
+        self.is_service_group = False  # True for icon+property-list groups (S3, backup vault, etc.)
         self.children = []       # child LayoutNodes (groups)
         self.resources = []      # (resource_key, resource_type, label) tuples
         self.resource_positions = []  # populated during layout: (key, type, label, x, y)
+        self.service_group_text = ""  # bullet-list HTML for service group property list
         self.w = 0
         self.h = 0
         self.x = 0
@@ -454,6 +498,10 @@ def render_drawio(tfdata, outfile, source, layout):
         for child_key in children:
             child_type = _safe_resource_type(child_key)
             if child_type in GROUP_NODES:
+                # Security groups are only containers inside a VPC; at region
+                # level (vpc_ids is None) they render as flat icons.
+                if child_type == "aws_security_group" and vpc_ids is None:
+                    continue
                 child_node = _build_tree(child_key, vpc_ids=vpc_ids)
                 node.children.append(child_node)
 
@@ -466,8 +514,11 @@ def render_drawio(tfdata, outfile, source, layout):
         seen_rt_in_subnet = set()  # track route tables already added to this container
         for child_key in children:
             child_type = _safe_resource_type(child_key)
+            # Skip children already built as groups in Pass 1 (but allow
+            # security groups that were demoted to flat icons at region level)
             if child_type in GROUP_NODES:
-                continue
+                if not (child_type == "aws_security_group" and vpc_ids is None):
+                    continue
             if child_type in tfdata.get("hidden", []):
                 continue
 
@@ -694,6 +745,37 @@ def render_drawio(tfdata, outfile, source, layout):
     # Phase 2: Compute sizes bottom-up
     # ------------------------------------------------------------------
 
+    def _short_type_name(resource_type, parent_type=""):
+        """Extract a short display name from a Terraform resource type.
+
+        Strips the provider prefix and the parent resource type prefix to get
+        just the ancillary suffix. E.g. with parent_type='aws_s3_bucket':
+          aws_s3_bucket_ownership_controls -> OwnershipControls
+          aws_s3_bucket_policy -> BucketPolicy
+          aws_backup_vault_lock_configuration -> LockConfiguration
+          aws_backup_vault_policy -> VaultPolicy
+        """
+        name = resource_type
+        # Try to strip the parent type prefix (e.g. "aws_s3_bucket_" from "aws_s3_bucket_policy")
+        if parent_type and name.startswith(parent_type + "_"):
+            name = name[len(parent_type) + 1:]
+        else:
+            # Remove provider prefix (e.g. "aws_")
+            parts = name.split("_")
+            if len(parts) > 1 and parts[0] in ("aws", "azurerm", "google"):
+                parts = parts[1:]
+            name = "_".join(parts)
+        # Title-case each word and join
+        return "".join(p.capitalize() for p in name.split("_"))
+
+    def _is_service_group(node):
+        """Determine if a GROUP_NODE should use icon+property-list rendering."""
+        return (
+            node.is_group
+            and node.resource_type not in INFRASTRUCTURE_GROUP_TYPES
+            and node.resources  # has child resources
+        )
+
     def _compute_size(node):
         """Compute width/height for a LayoutNode based on children and resources."""
         if not node.is_group:
@@ -704,6 +786,28 @@ def render_drawio(tfdata, outfile, source, layout):
         # Recursively size children first
         for child in node.children:
             _compute_size(child)
+
+        # Service group: icon + property-list layout
+        if _is_service_group(node):
+            node.is_service_group = True
+            n_children = len(node.resources)
+            # Build property-list text
+            lines = []
+            for _, rtype, _ in node.resources:
+                lines.append(f"- {_short_type_name(rtype, parent_type=node.resource_type)}")
+            node.service_group_text = "<br>".join(lines)
+            # Size based on child count (matching gold standard)
+            if n_children <= 4:
+                h = 150
+            elif n_children <= 5:
+                h = 160
+            elif n_children <= 6:
+                h = 180
+            else:
+                h = 195
+            node.w = SERVICE_GROUP_CONTAINER_W
+            node.h = h
+            return
 
         # Compute resource footprints, splitting networkmanager into separate row
         regular_res = [r for r in node.resources if not r[1].startswith("aws_networkmanager_")]
@@ -720,6 +824,8 @@ def render_drawio(tfdata, outfile, source, layout):
         if regular_res:
             reg_fp = [_estimate_label_footprint(lbl) for _, _, lbl in regular_res]
             reg_cell_w = max(fw for fw, _ in reg_fp)
+            if rtype in ("tv_aws_region", "aws_account"):
+                reg_cell_w = min(reg_cell_w, REGION_MAX_CELL_W)
             reg_cell_h = max(fh for _, fh in reg_fp)
             reg_rows = (len(regular_res) + per_row - 1) // per_row
             reg_cols = min(len(regular_res), per_row)
@@ -756,12 +862,39 @@ def render_drawio(tfdata, outfile, source, layout):
                 children_h += SUBNET_SPACING + res_block_h
                 children_w = max(children_w, res_block_w + 2 * CONTAINER_PAD_SIDE)
         else:
-            # Region / Account / other: children arranged horizontally
-            children_w = (
-                sum(c.w for c in node.children)
-                + max(0, len(node.children) - 1) * VPC_SPACING
+            # Region / Account / other: separate service-group children from
+            # infrastructure children. Infrastructure (VPCs etc.) arrange
+            # horizontally; service groups arrange in a multi-column grid.
+            infra_children = [c for c in node.children if not c.is_service_group]
+            sg_children = [c for c in node.children if c.is_service_group]
+
+            # Infrastructure children: horizontal
+            infra_w = (
+                sum(c.w for c in infra_children)
+                + max(0, len(infra_children) - 1) * VPC_SPACING
             )
-            children_h = max((c.h for c in node.children), default=0)
+            infra_h = max((c.h for c in infra_children), default=0)
+
+            # Service group children: grid layout (SERVICE_GROUP_COLUMNS columns)
+            sg_w = 0
+            sg_h = 0
+            if sg_children:
+                cols = SERVICE_GROUP_COLUMNS
+                rows_count = (len(sg_children) + cols - 1) // cols
+                sg_col_w = SERVICE_GROUP_CONTAINER_W + SERVICE_GROUP_COL_GAP
+                sg_w = min(len(sg_children), cols) * sg_col_w - SERVICE_GROUP_COL_GAP
+                row_heights = []
+                for r in range(rows_count):
+                    row_slice = sg_children[r * cols : (r + 1) * cols]
+                    row_heights.append(max(c.h for c in row_slice))
+                sg_h = sum(row_heights) + max(0, rows_count - 1) * SERVICE_GROUP_COL_GAP
+
+            children_w = max(infra_w, sg_w)
+            children_h = infra_h
+            if sg_h > 0 and infra_h > 0:
+                children_h += VPC_SPACING + sg_h
+            elif sg_h > 0:
+                children_h = sg_h
 
         content_w = max(children_w, res_block_w)
         content_h = children_h
@@ -801,6 +934,10 @@ def render_drawio(tfdata, outfile, source, layout):
         if not node.is_group:
             return
 
+        # Service groups use icon+property-list, no grid placement needed
+        if node.is_service_group:
+            return
+
         cx = CONTAINER_PAD_SIDE
         cy = CONTAINER_PAD_TOP
         rtype = node.resource_type
@@ -823,18 +960,41 @@ def render_drawio(tfdata, outfile, source, layout):
                 res_y = az_bottom + SUBNET_SPACING
                 _place_resources_grid(node, CONTAINER_PAD_SIDE, res_y)
         else:
-            # Horizontal arrangement for Region / Account
-            for child in node.children:
+            # Region / Account: infrastructure children horizontal,
+            # service group children in a multi-column grid below.
+            infra_children = [c for c in node.children if not c.is_service_group]
+            sg_children = [c for c in node.children if c.is_service_group]
+
+            for child in infra_children:
                 _assign_positions(child, cx, cy)
                 cx += child.w + VPC_SPACING
+
+            # Service groups in grid below infrastructure children
+            if sg_children:
+                sg_top = CONTAINER_PAD_TOP
+                if infra_children:
+                    sg_top = CONTAINER_PAD_TOP + max(
+                        (c.h for c in infra_children), default=0
+                    ) + VPC_SPACING
+                sg_cx = CONTAINER_PAD_SIDE
+                sg_cy = sg_top
+                cols = SERVICE_GROUP_COLUMNS
+                col_w = SERVICE_GROUP_CONTAINER_W + SERVICE_GROUP_COL_GAP
+                for i, child in enumerate(sg_children):
+                    col = i % cols
+                    if i > 0 and col == 0:
+                        # New row: advance y by max height of previous row
+                        prev_row_start = (i // cols - 1) * cols
+                        prev_row = sg_children[prev_row_start:prev_row_start + cols]
+                        sg_cy += max(c.h for c in prev_row) + SERVICE_GROUP_COL_GAP
+                    sx = CONTAINER_PAD_SIDE + col * col_w
+                    _assign_positions(child, sx, sg_cy)
 
         # Place resources inside non-VPC containers below children
         if rtype not in ("aws_vpc",) and node.resources:
             child_bottom = CONTAINER_PAD_TOP
             if node.children:
-                child_bottom = CONTAINER_PAD_TOP + max(
-                    (c.h for c in node.children), default=0
-                )
+                child_bottom = max(c.y + c.h for c in node.children)
                 child_bottom += SUBNET_SPACING
             _place_resources_grid(node, CONTAINER_PAD_SIDE, child_bottom)
 
@@ -881,6 +1041,8 @@ def render_drawio(tfdata, outfile, source, layout):
         cur_y = base_y
         if regular:
             cell_w = max(fw for _, (fw, _) in regular)
+            if node.resource_type in ("tv_aws_region", "aws_account"):
+                cell_w = min(cell_w, REGION_MAX_CELL_W)
             cell_h = max(fh for _, (_, fh) in regular)
             for i, ((rkey, rtype, rlabel), _) in enumerate(regular):
                 col = i % per_row
@@ -939,6 +1101,44 @@ def render_drawio(tfdata, outfile, source, layout):
     def _emit_node(node, parent_cell_id="1"):
         """Recursively emit mxCell elements for a LayoutNode and its descendants."""
         if not node.is_group:
+            return
+
+        # Service group: icon + property-list rendering
+        if node.is_service_group:
+            style = get_group_style(node.resource_type, node.key)
+            if style is None:
+                style = (
+                    "fillColor=none;strokeColor=#5A6C86;dashed=1;verticalAlign=top;"
+                    "fontStyle=0;fontColor=#5A6C86;whiteSpace=wrap;html=1;"
+                    "container=1;collapsible=0;recursiveResize=0;rounded=1;"
+                )
+            container_action = tfdata["meta_data"].get(node.key, {}).get("_change_action", "no-op")
+            style = apply_change_highlight(style, container_action)
+
+            # Empty label on the container
+            node.cell_id = doc.add_container(
+                parent_cell_id, "", style, node.x, node.y, node.w, node.h
+            )
+            resource_cell_ids[node.key] = node.cell_id
+
+            # Icon for the group's own resource type on the left
+            icon_style = get_resource_style(node.resource_type)
+            icon_style = apply_change_highlight(icon_style, container_action)
+            icon_label = _build_label(node.key, is_group=False)
+            rid = doc.add_resource(
+                node.cell_id, icon_label, icon_style,
+                SERVICE_GROUP_ICON_X, SERVICE_GROUP_ICON_Y, ICON_W, ICON_H
+            )
+            resource_cell_ids[node.key + "::icon"] = rid
+
+            # Property-list text cell on the right
+            text_h = node.h - 40
+            doc.add_styled_text(
+                node.cell_id, node.service_group_text,
+                SERVICE_GROUP_TEXT_STYLE,
+                SERVICE_GROUP_TEXT_X, SERVICE_GROUP_TEXT_Y,
+                195, text_h
+            )
             return
 
         style = get_group_style(node.resource_type, node.key)
