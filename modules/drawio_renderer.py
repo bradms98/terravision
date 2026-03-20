@@ -17,6 +17,7 @@ from modules.drawio_shapes import get_group_style, get_resource_style, apply_cha
 ICON_W, ICON_H = 48, 48           # The actual mxCell icon size
 RESOURCE_GAP = 15                  # Minimum gap between resource footprints
 RESOURCES_PER_ROW = 3
+REGION_RESOURCES_PER_ROW = 6          # items per row for region-level (non-VPC) resources
 CONTAINER_PAD_TOP = 60
 CONTAINER_PAD_SIDE = 20
 CONTAINER_PAD_BOTTOM = 20
@@ -703,14 +704,20 @@ def render_drawio(tfdata, outfile, source, layout):
         regular_res = [r for r in node.resources if not r[1].startswith("aws_networkmanager_")]
         nm_res = [r for r in node.resources if r[1].startswith("aws_networkmanager_")]
 
+        # Use wider grid for region/account containers (resources outside VPCs)
+        rtype = node.resource_type
+        per_row = REGION_RESOURCES_PER_ROW if rtype in (
+            "tv_aws_region", "aws_account",
+        ) else RESOURCES_PER_ROW
+
         res_block_w = 0
         res_block_h = 0
         if regular_res:
             reg_fp = [_estimate_label_footprint(lbl) for _, _, lbl in regular_res]
             reg_cell_w = max(fw for fw, _ in reg_fp)
             reg_cell_h = max(fh for _, fh in reg_fp)
-            reg_rows = (len(regular_res) + RESOURCES_PER_ROW - 1) // RESOURCES_PER_ROW
-            reg_cols = min(len(regular_res), RESOURCES_PER_ROW)
+            reg_rows = (len(regular_res) + per_row - 1) // per_row
+            reg_cols = min(len(regular_res), per_row)
             res_block_w = reg_cols * reg_cell_w + (reg_cols - 1) * RESOURCE_GAP
             res_block_h = reg_rows * reg_cell_h + (reg_rows - 1) * RESOURCE_GAP
         if nm_res:
@@ -854,6 +861,11 @@ def render_drawio(tfdata, outfile, source, layout):
         if not node.resources:
             return
 
+        # Use wider grid for region/account containers (resources outside VPCs)
+        per_row = REGION_RESOURCES_PER_ROW if node.resource_type in (
+            "tv_aws_region", "aws_account",
+        ) else RESOURCES_PER_ROW
+
         # Split into regular resources and networkmanager resources
         regular = [(r, _estimate_label_footprint(r[2])) for r in node.resources
                     if not r[1].startswith("aws_networkmanager_")]
@@ -866,13 +878,13 @@ def render_drawio(tfdata, outfile, source, layout):
             cell_w = max(fw for _, (fw, _) in regular)
             cell_h = max(fh for _, (_, fh) in regular)
             for i, ((rkey, rtype, rlabel), _) in enumerate(regular):
-                col = i % RESOURCES_PER_ROW
-                row = i // RESOURCES_PER_ROW
+                col = i % per_row
+                row = i // per_row
                 icon_offset_x = (cell_w - ICON_W) / 2
                 rx = base_x + col * (cell_w + RESOURCE_GAP) + icon_offset_x
                 ry = base_y + row * (cell_h + RESOURCE_GAP)
                 node.resource_positions.append((rkey, rtype, rlabel, rx, ry))
-            n_rows = (len(regular) + RESOURCES_PER_ROW - 1) // RESOURCES_PER_ROW
+            n_rows = (len(regular) + per_row - 1) // per_row
             cur_y = base_y + n_rows * (cell_h + RESOURCE_GAP)
 
         # Place networkmanager resources in a horizontal row below
