@@ -1970,51 +1970,16 @@ def add_number_suffix(
 def extend_sg_groups(tfdata: Dict[str, Any]) -> Dict[str, Any]:
     """Extend security groups to match numbered resource instances.
 
-    Creates numbered security group instances to match numbered resources
-    they're associated with.
+    Skipped: security groups are no longer treated as containers (removed
+    from GROUP_NODES), so per-subnet duplication is unnecessary.  SGs render
+    as flat icons with association arrows instead.
 
     Args:
         tfdata: Terraform data dictionary
 
     Returns:
-        Updated tfdata with extended security groups
+        tfdata unchanged
     """
-    list_of_sgs = [
-        s
-        for s in tfdata["graphdict"]
-        if helpers.get_no_module_name(s).startswith("aws_security_group")
-    ]
-    for sg in list_of_sgs:
-        expanded = False
-        for connection in list(tfdata["graphdict"][sg]):
-            if "~" in connection and "~" not in sg:
-                expanded = True
-                suffixed_sg = sg + "~" + connection.split("~")[1]
-                tfdata["graphdict"][suffixed_sg] = list([connection])
-                helpers.safe_remove_connection(tfdata, sg, connection)
-        if expanded:
-            also_connected = helpers.list_of_parents(tfdata["graphdict"], sg)
-            for node in also_connected:
-                if "~" in node:
-                    suffixed_sg = sg + "~" + node.split("~")[1]
-                    if helpers.safe_remove_connection(tfdata, node, sg):
-                        tfdata["graphdict"][node].append(suffixed_sg)
-                    # check if other multiples of the node also have the relationship, if not, add it
-                    if "~1" in node:
-                        i = 2
-                        next_node = node.split("~")[0] + "~" + str(i)
-                        next_sg = sg + "~" + str(i)
-                        while (
-                            next_node in tfdata["graphdict"].keys()
-                            and next_sg in tfdata["graphdict"].keys()
-                        ):
-                            if not next_sg in tfdata["graphdict"][next_node]:
-                                tfdata["graphdict"][next_node].append(next_sg)
-                            i = i + 1
-                            next_node = node.split("~")[0] + "~" + str(i)
-                            next_sg = sg + "~" + str(i)
-            helpers.delete_node(tfdata, sg, remove_from_connections=False)
-
     return tfdata
 
 

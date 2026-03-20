@@ -365,6 +365,18 @@ def render_drawio(tfdata, outfile, source, layout):
             parts = [_wrap_line(type_label)]
             if name_tag:
                 parts.append(_wrap_line(name_tag))
+            elif resource_type == "aws_security_group" and "module." in resource_key:
+                # Fall back to module name for SGs without a Name tag
+                # e.g. "module.adm_server_sg.aws_security_group.this" → "Adm Server SG"
+                mod_parts = resource_key.split(".")
+                for i, p in enumerate(mod_parts):
+                    if p == "module" and i + 1 < len(mod_parts):
+                        mod_name = mod_parts[i + 1]
+                        break
+                else:
+                    mod_name = ""
+                if mod_name:
+                    parts.append(_wrap_line(mod_name.replace("_", " ").title()))
             if resource_id:
                 parts.append(resource_id)
             return "<br>".join(parts)
@@ -498,10 +510,6 @@ def render_drawio(tfdata, outfile, source, layout):
         for child_key in children:
             child_type = _safe_resource_type(child_key)
             if child_type in GROUP_NODES:
-                # Security groups are only containers inside a VPC; at region
-                # level (vpc_ids is None) they render as flat icons.
-                if child_type == "aws_security_group" and vpc_ids is None:
-                    continue
                 child_node = _build_tree(child_key, vpc_ids=vpc_ids)
                 node.children.append(child_node)
 
@@ -514,11 +522,9 @@ def render_drawio(tfdata, outfile, source, layout):
         seen_rt_in_subnet = set()  # track route tables already added to this container
         for child_key in children:
             child_type = _safe_resource_type(child_key)
-            # Skip children already built as groups in Pass 1 (but allow
-            # security groups that were demoted to flat icons at region level)
+            # Skip children already built as groups in Pass 1
             if child_type in GROUP_NODES:
-                if not (child_type == "aws_security_group" and vpc_ids is None):
-                    continue
+                continue
             if child_type in tfdata.get("hidden", []):
                 continue
 

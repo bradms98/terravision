@@ -159,7 +159,6 @@ AWS_GROUP_NODES = [
     "aws_subnet",
     "aws_s3_bucket",
     "aws_backup_vault",
-    "aws_security_group",
     "tv_aws_onprem",
     "tv_aws_region",
 ]

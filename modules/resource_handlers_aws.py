@@ -484,34 +484,10 @@ def handle_sg_relationships(tfdata: Dict[str, Any]) -> Dict[str, Any]:
                 plist = helpers.list_of_parents(tfdata["graphdict"], connection)
                 for p in plist:
                     helpers.safe_remove_connection(tfdata, p, connection)
-        # Replace any references to nodes within the security group with the security group
-        references = sorted(list(helpers.list_of_parents(tfdata["graphdict"], target)))
-        if sg_to_purge:
-            for purge in sg_to_purge:
-                if purge in references:
-                    references.remove(purge)
-        replacement_sgs = sorted(
-            [
-                k
-                for k in references
-                if helpers.get_no_module_name(k).startswith("aws_security_group")
-            ]
-        )
-        if replacement_sgs:
-            for replaced_group in replacement_sgs:
-                for node in sorted(references):
-                    if (
-                        target in tfdata["graphdict"][node]
-                        and not helpers.get_no_module_name(node).startswith(
-                            "aws_security_group"
-                        )
-                        and helpers.get_no_module_name(node).split(".")[0]
-                        in GROUP_NODES
-                        and not helpers.get_no_module_name(node).startswith("aws_vpc")
-                        and replaced_group not in tfdata["graphdict"][node]
-                    ):
-                        tfdata["graphdict"][node].remove(target)
-                        tfdata["graphdict"][node].append(replaced_group)
+        # Security groups are flat icons (not containers), so do NOT replace
+        # child resources with SGs in parent containers.  The old code here
+        # swapped EC2 instances for SG containers inside subnets — no longer
+        # needed since SGs are no longer in GROUP_NODES.
     return tfdata
 
 
@@ -546,41 +522,25 @@ def aws_handle_sg(tfdata: Dict[str, Any]) -> Dict[str, Any]:
     tfdata = handle_indirect_sg_rules(tfdata)
     # Main handler for SG relationships
     tfdata = handle_sg_relationships(tfdata)
-    # Link subnets to security groups
+    # Security groups render as flat icons at region/VPC level with arrows
+    # to their associated resources.  Remove SGs from VPC children so they
+    # appear at the region level, and prune orphan SGs that have no
+    # connections at all.
     list_of_sgs = helpers.list_of_dictkeys_containing(
         tfdata["graphdict"], "aws_security_group."
     )
     for sg in list_of_sgs:
-        for sg_connection in sorted(list(tfdata["graphdict"][sg])):
-            parent_list = sorted(
-                helpers.list_of_parents(tfdata["graphdict"], sg_connection)
-            )
-            # Add SG to parent subnets
-            for parent in parent_list:
-                if (
-                    helpers.get_no_module_name(parent).startswith("aws_subnet")
-                    and sg not in tfdata["graphdict"][parent]
-                    and sg + "~1" not in parent_list
-                ):
-                    tfdata["graphdict"][parent].append(sg)
-                    helpers.safe_remove_connection(tfdata, parent, sg_connection)
-    # Remove SGs from VPC level (they belong in subnets)
-    for sg in list_of_sgs:
         parent_list = sorted(helpers.list_of_parents(tfdata["graphdict"], sg))
         for parent in parent_list:
-            if (
-                helpers.get_no_module_name(parent).startswith("aws_vpc")
-                and sg in tfdata["graphdict"][parent]
-            ):
+            if helpers.get_no_module_name(parent).startswith("aws_vpc"):
                 helpers.safe_remove_connection(tfdata, parent, sg)
-    # Remove orphan security groups with no connections or parents
+    # Remove orphan security groups that have no connections AND no parents
     for sg in sorted(list_of_sgs):
-        if sg in tfdata["graphdict"] and len(tfdata["graphdict"][sg]) == 0:
-            helpers.delete_node(tfdata, sg)
-        if (
-            helpers.list_of_parents(tfdata["graphdict"], sg, True) == []
-            and sg in tfdata["graphdict"]
-        ):
+        if sg not in tfdata["graphdict"]:
+            continue
+        has_children = len(tfdata["graphdict"][sg]) > 0
+        has_parents = helpers.list_of_parents(tfdata["graphdict"], sg, True) != []
+        if not has_children and not has_parents:
             helpers.delete_node(tfdata, sg)
     return tfdata
 
