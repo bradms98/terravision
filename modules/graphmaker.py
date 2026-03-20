@@ -1299,6 +1299,123 @@ def add_relations(tfdata: Dict[str, Any]) -> Dict[str, Any]:
     return tfdata
 
 
+def _strip_type_prefix(key: str) -> str:
+    """Extract the resource type.name from a potentially module-prefixed key.
+
+    E.g. "module.vpc.aws_subnet.public" -> "aws_subnet.public"
+         "aws_instance.web" -> "aws_instance.web"
+    """
+    parts = key.split(".")
+    # module.X.type.name -> type.name (last two parts)
+    # type.name -> type.name
+    if len(parts) >= 2:
+        return ".".join(parts[-2:])
+    return key
+
+
+def infer_relationships_from_metadata(tfdata: Dict[str, Any]) -> Dict[str, Any]:
+    """Infer resource relationships from metadata attributes for state-only mode.
+
+    Scans each resource's meta_data attributes, matches values against other
+    resources' id/arn/name fields via reverse lookup indexes, and adds edges
+    to graphdict.
+
+    Args:
+        tfdata: Terraform data dictionary with graphdict and meta_data
+
+    Returns:
+        Updated tfdata with inferred relationship edges
+    """
+    constants = _load_config_constants(tfdata)
+    attr_relationships = constants.get("ATTRIBUTE_RELATIONSHIPS")
+    if not attr_relationships:
+        return tfdata
+
+    graphdict = tfdata["graphdict"]
+    meta_data = tfdata.get("meta_data", {})
+
+    # Build reverse lookup indexes
+    id_index = {}    # resource_id -> graphdict_key
+    arn_index = {}   # resource_arn -> graphdict_key
+    field_index = {} # (type_prefix, field, value) -> graphdict_key
+
+    for key in graphdict:
+        meta = meta_data.get(key, {})
+        if not isinstance(meta, dict):
+            continue
+        type_name = _strip_type_prefix(key)
+        type_prefix = type_name.split(".")[0] + "."
+
+        # Index common identifiers
+        for field in ("id", "arn", "name", "bucket", "function_name", "zone_id"):
+            val = meta.get(field)
+            if val and isinstance(val, str):
+                if field == "id":
+                    id_index[val] = key
+                elif field == "arn":
+                    arn_index[val] = key
+                field_index[(type_prefix, field, val)] = key
+
+    edges_added = 0
+
+    for node, connections in list(graphdict.items()):
+        meta = meta_data.get(node, {})
+        if not isinstance(meta, dict):
+            continue
+
+        for attr_name, target_type_prefix, rel_type, match_field in attr_relationships:
+            value = meta.get(attr_name)
+            if not value:
+                continue
+
+            # Normalize to list for uniform handling
+            values = value if isinstance(value, list) else [value]
+
+            for v in values:
+                if not isinstance(v, str):
+                    continue
+
+                # Look up target by the appropriate index
+                target_key = None
+                if match_field == "id":
+                    target_key = id_index.get(v)
+                elif match_field == "arn":
+                    target_key = arn_index.get(v)
+                else:
+                    target_key = field_index.get((target_type_prefix, match_field, v))
+
+                if not target_key or target_key == node:
+                    continue
+
+                # Verify target type matches expected prefix
+                target_type = _strip_type_prefix(target_key).split(".")[0] + "."
+                if not target_type.startswith(target_type_prefix.rstrip(".").split(".")[0]):
+                    continue
+
+                # Add edge based on relationship type
+                if rel_type == "containment":
+                    # Parent (target) contains child (node)
+                    if node not in graphdict.get(target_key, []):
+                        graphdict[target_key].append(node)
+                        edges_added += 1
+                elif rel_type == "association":
+                    # Peer connection: node -> target
+                    if target_key not in connections:
+                        connections.append(target_key)
+                        edges_added += 1
+
+    if edges_added > 0:
+        click.echo(
+            click.style(
+                f"\nInferred {edges_added} relationships from resource metadata.",
+                fg="cyan",
+                bold=True,
+            )
+        )
+
+    return tfdata
+
+
 def consolidate_nodes(tfdata: Dict[str, Any]) -> Dict[str, Any]:
     """Consolidate similar resources into single nodes.
 

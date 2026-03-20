@@ -154,6 +154,8 @@ def compile_tfdata(
             }
             tfdata["plandata"]["prior_state"] = state_converter.state_to_prior_state(state_data)
             tfdata = tfwrapper.setup_tfdata(tfdata)
+            tfdata = graphmaker.infer_relationships_from_metadata(tfdata)
+            tfdata = tfwrapper.add_vpc_implied_relations(tfdata)
             tfdata["original_graphdict"] = copy.deepcopy(tfdata["graphdict"])
             tfdata["original_metadata"] = copy.deepcopy(tfdata["meta_data"])
             # Parse source directory for HCL metadata.
@@ -176,6 +178,25 @@ def compile_tfdata(
                         fg="yellow",
                     )
                 )
+                # Ensure enrichment pipeline can still run without HCL data
+                tfdata.setdefault("all_resource", {})
+                tfdata.setdefault("module_source_dict", {})
+                tfdata.setdefault("all_variable", {})
+                # Detect provider from graphdict keys so detect_providers() is skipped
+                from modules.provider_detector import get_provider_for_resource, SUPPORTED_PROVIDERS
+                _prov_counts = {}
+                for _k in tfdata.get("graphdict", {}):
+                    _p = get_provider_for_resource(_k)
+                    if _p in SUPPORTED_PROVIDERS:
+                        _prov_counts[_p] = _prov_counts.get(_p, 0) + 1
+                if _prov_counts:
+                    _primary = max(_prov_counts, key=_prov_counts.get)
+                    tfdata["provider_detection"] = {
+                        "primary_provider": _primary,
+                        "providers": list(_prov_counts.keys()),
+                        "resource_counts": _prov_counts,
+                        "confidence": 1.0,
+                    }
     elif source.endswith(".json"):
         validators.validate_source(source)
         tfdata = tfwrapper.load_json_source(source)
@@ -222,6 +243,8 @@ def compile_tfdata(
             tfdata = tfwrapper.tf_makegraph(tfdata, debug)
         else:
             tfdata = tfwrapper.setup_tfdata(tfdata)
+        tfdata = graphmaker.infer_relationships_from_metadata(tfdata)
+        tfdata = tfwrapper.add_vpc_implied_relations(tfdata)
         tfdata["original_graphdict"] = copy.deepcopy(tfdata["graphdict"])
         tfdata["original_metadata"] = copy.deepcopy(tfdata["meta_data"])
 
