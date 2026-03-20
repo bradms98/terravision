@@ -10,6 +10,7 @@ set -euo pipefail
 # OUTPUT_PATH      - output directory (default: docs/architecture)
 # RUN_STATUS_FILTER - applied (post-apply) or planned (PR speculative)
 # DIAGRAM_FILTER   - terravision --filter value (default: network, set to "none" to disable)
+# GH_TOKEN         - GitHub token for cloning private modules (also accepts GITHUB_TOKEN or GIT_TOKEN)
 
 # Scalr CLI reads SCALR_TOKEN and SCALR_HOSTNAME from env vars directly
 export SCALR_TOKEN="${TF_API_TOKEN:?TF_API_TOKEN is required}"
@@ -23,6 +24,16 @@ DIAGRAM_FILTER="${DIAGRAM_FILTER:-network}"
 
 SOURCE_DIR="/workspace/source/${TF_SOURCE}"
 OUTPUT_DIR="/workspace/source/${OUTPUT_PATH}"
+
+# Configure git credentials for private module cloning.
+# Accepts GH_TOKEN, GITHUB_TOKEN, or GIT_TOKEN env var.
+_GIT_TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-${GIT_TOKEN:-}}}"
+if [ -n "$_GIT_TOKEN" ]; then
+    echo "==> Configuring git credentials for HTTPS module cloning"
+    git config --global url."https://x-access-token:${_GIT_TOKEN}@github.com/".insteadOf "https://github.com/"
+    git config --global url."https://x-access-token:${_GIT_TOKEN}@github.com/".insteadOf "git::https://github.com/"
+    git config --global url."https://x-access-token:${_GIT_TOKEN}@github.com/".insteadOf "github.com/"
+fi
 
 echo "==> Fetching latest '${RUN_STATUS_FILTER}' run for workspace ${WORKSPACE_ID}"
 RUN_JSON=$(scalr get-runs \
