@@ -319,6 +319,27 @@ def render_drawio(tfdata, outfile, source, layout):
             lines.append(current.rstrip())
         return "<br>".join(lines)
 
+    # Derive account name from source repo directory or git remote
+    import os, subprocess
+    _account_name = ""
+    _source_dir = os.path.normpath(source) if source else ""
+    _source_basename = os.path.basename(_source_dir) if _source_dir else ""
+    if _source_basename and _source_basename not in ("source", "workspace", ".", ""):
+        _account_name = _source_basename.replace("_", " ").title()
+    elif _source_dir:
+        # Inside Docker the mount point is generic; try git remote for repo name
+        try:
+            _remote = subprocess.check_output(
+                ["git", "-C", _source_dir, "remote", "get-url", "origin"],
+                stderr=subprocess.DEVNULL, timeout=5
+            ).decode().strip()
+            # Extract repo name from URL (e.g. ".../aws_prod_data.git" → "aws_prod_data")
+            _repo = os.path.basename(_remote).removesuffix(".git")
+            if _repo:
+                _account_name = _repo.replace("_", " ").title()
+        except Exception:
+            pass
+
     # Extract AWS account ID from plan data for account label
     _account_id = None
     plandata = tfdata.get("plandata", {})
@@ -351,9 +372,12 @@ def render_drawio(tfdata, outfile, source, layout):
             parts = [type_label]
             if name_tag:
                 parts[0] = f"{type_label} - {name_tag}"
-            # Account node: use account ID from plan data
-            if resource_type == "aws_account" and _account_id:
-                parts.append(_account_id)
+            # Account node: show account name (from repo) and account ID
+            if resource_type == "aws_account":
+                if _account_name:
+                    parts[0] = f"{type_label} - {_account_name}"
+                if _account_id:
+                    parts.append(_account_id)
             elif resource_id:
                 parts.append(resource_id)
             if cidr:

@@ -384,7 +384,7 @@ def get_resource_id(resource: str, tfdata: Dict[str, Any]) -> str:
     rid = meta.get("id", "")
     if not isinstance(rid, str) or not rid:
         return ""
-    return _truncate_resource_id(rid)
+    return rid
 
 
 def build_rich_label(resource: str, tfdata: Dict[str, Any], is_group: bool = False) -> str:
