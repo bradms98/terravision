@@ -379,6 +379,46 @@ AWS_DISCONNECT_LIST = []
 # Resources that should be hidden from the diagram by default
 AWS_HIDE_NODES = ["aws_security_group_rule"]
 
+# Attribute-based relationship inference for state-only mode.
+# Each tuple: (attr_name, target_type_prefix, relationship, match_field)
+# - "containment": child renders inside parent container
+# - "association": peer-to-peer connection edge
+AWS_ATTRIBUTE_RELATIONSHIPS = [
+    # Containment: child renders inside parent container
+    ("vpc_id",                 "aws_vpc.",              "containment", "id"),
+    ("subnet_id",              "aws_subnet.",           "containment", "id"),
+    ("subnet_ids",             "aws_subnet.",           "containment", "id"),
+    ("db_subnet_group_name",   "aws_db_subnet_group.",  "containment", "name"),
+    ("cluster_name",           "aws_ecs_cluster.",      "containment", "name"),
+    ("cluster_identifier",     "aws_rds_cluster.",      "containment", "id"),
+
+    # Association: peer-to-peer connection edge
+    ("allocation_id",          "aws_eip.",              "association", "id"),
+    ("security_group_ids",     "aws_security_group.",   "association", "id"),
+    ("vpc_security_group_ids", "aws_security_group.",   "association", "id"),
+    ("target_group_arn",       "aws_lb_target_group.",  "association", "arn"),
+    ("load_balancer_arn",      "aws_lb.",               "association", "arn"),
+    ("execution_role_arn",     "aws_iam_role.",         "association", "arn"),
+    ("task_role_arn",          "aws_iam_role.",         "association", "arn"),
+    ("role_arn",               "aws_iam_role.",         "association", "arn"),
+    ("kms_key_id",             "aws_kms_key.",          "association", "arn"),
+    ("kms_key_arn",            "aws_kms_key.",          "association", "arn"),
+    ("log_group_name",         "aws_cloudwatch_log_group.", "association", "name"),
+    ("bucket",                 "aws_s3_bucket.",        "association", "bucket"),
+    ("function_name",          "aws_lambda_function.",  "association", "function_name"),
+    ("topic_arn",              "aws_sns_topic.",        "association", "arn"),
+    ("certificate_arn",        "aws_acm_certificate.",  "association", "arn"),
+    ("hosted_zone_id",         "aws_route53_zone.",     "association", "zone_id"),
+    ("instance_id",            "aws_instance.",         "association", "id"),
+    ("nat_gateway_id",         "aws_nat_gateway.",      "association", "id"),
+    ("internet_gateway_id",    "aws_internet_gateway.", "association", "id"),
+    ("transit_gateway_id",     "aws_ec2_transit_gateway.", "association", "id"),
+
+    # Backup: vault-centric relationships
+    ("backup_vault_name",      "aws_backup_vault.",     "association", "name"),
+    ("plan_id",                "aws_backup_plan.",      "association", "id"),
+]
+
 # Resources that should skip automatic expansion in handle_singular_references
 # These resources are manually matched to subnets by suffix in their handlers
 AWS_SKIP_SINGULAR_EXPANSION = [
