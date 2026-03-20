@@ -16,8 +16,7 @@ from modules.drawio_shapes import get_group_style, get_resource_style, apply_cha
 # Layout constants
 ICON_W, ICON_H = 48, 48           # The actual mxCell icon size
 RESOURCE_GAP = 15                  # Minimum gap between resource footprints
-RESOURCES_PER_ROW = 3
-REGION_RESOURCES_PER_ROW = 3          # items per row for region-level (non-VPC) resources
+MIN_RESOURCES_PER_ROW = 3             # minimum columns for flat icon grids
 REGION_MAX_CELL_W = 200               # cap cell width for region/account flat icon grids
 CONTAINER_PAD_TOP = 60
 CONTAINER_PAD_SIDE = 20
@@ -819,36 +818,25 @@ def render_drawio(tfdata, outfile, source, layout):
         regular_res = [r for r in node.resources if not r[1].startswith("aws_networkmanager_")]
         nm_res = [r for r in node.resources if r[1].startswith("aws_networkmanager_")]
 
-        # Use wider grid for region/account containers (resources outside VPCs)
         rtype = node.resource_type
-        per_row = REGION_RESOURCES_PER_ROW if rtype in (
-            "tv_aws_region", "aws_account",
-        ) else RESOURCES_PER_ROW
 
-        res_block_w = 0
-        res_block_h = 0
+        # Pre-compute per-cell dimensions for resource block (needed after
+        # children_w is known to determine dynamic per_row)
+        reg_cell_w = reg_cell_h = 0
         if regular_res:
             reg_fp = [_estimate_label_footprint(lbl) for _, _, lbl in regular_res]
             reg_cell_w = max(fw for fw, _ in reg_fp)
             if rtype in ("tv_aws_region", "aws_account"):
                 reg_cell_w = min(reg_cell_w, REGION_MAX_CELL_W)
             reg_cell_h = max(fh for _, fh in reg_fp)
-            reg_rows = (len(regular_res) + per_row - 1) // per_row
-            reg_cols = min(len(regular_res), per_row)
-            res_block_w = reg_cols * reg_cell_w + (reg_cols - 1) * RESOURCE_GAP
-            res_block_h = reg_rows * reg_cell_h + (reg_rows - 1) * RESOURCE_GAP
+
+        nm_cell_w = nm_cell_h = 0
         if nm_res:
             nm_fp = [_estimate_label_footprint(lbl) for _, _, lbl in nm_res]
             nm_cell_w = max(fw for fw, _ in nm_fp)
             nm_cell_h = max(fh for _, fh in nm_fp)
-            nm_row_w = len(nm_res) * nm_cell_w + (len(nm_res) - 1) * RESOURCE_GAP
-            res_block_w = max(res_block_w, nm_row_w)
-            if res_block_h > 0:
-                res_block_h += RESOURCE_GAP
-            res_block_h += nm_cell_h
 
         # Determine arrangement of child containers
-        rtype = node.resource_type
         if rtype in ("aws_az", "tv_aws_az"):
             # AZ: subnets stacked vertically
             children_w = max((c.w for c in node.children), default=0)
@@ -863,10 +851,6 @@ def render_drawio(tfdata, outfile, source, layout):
                 + max(0, len(node.children) - 1) * AZ_SPACING
             )
             children_h = max((c.h for c in node.children), default=0)
-            # Add space below AZs for VPC-level resources
-            if res_block_h > 0:
-                children_h += SUBNET_SPACING + res_block_h
-                children_w = max(children_w, res_block_w + 2 * CONTAINER_PAD_SIDE)
         else:
             # Region / Account / other: separate service-group children from
             # infrastructure children. Infrastructure (VPCs etc.) arrange
@@ -902,12 +886,38 @@ def render_drawio(tfdata, outfile, source, layout):
             elif sg_h > 0:
                 children_h = sg_h
 
+        # Now that children_w is known, compute how many flat icon columns
+        # fit in the available width (at least MIN_RESOURCES_PER_ROW).
+        res_block_w = 0
+        res_block_h = 0
+        available_w = children_w  # width already claimed by child containers
+        if regular_res and reg_cell_w > 0:
+            per_row = max(
+                MIN_RESOURCES_PER_ROW,
+                int((available_w + RESOURCE_GAP) // (reg_cell_w + RESOURCE_GAP)),
+            ) if available_w > 0 else MIN_RESOURCES_PER_ROW
+            per_row = min(per_row, len(regular_res))  # no more cols than items
+            reg_rows = (len(regular_res) + per_row - 1) // per_row
+            reg_cols = min(len(regular_res), per_row)
+            res_block_w = reg_cols * reg_cell_w + (reg_cols - 1) * RESOURCE_GAP
+            res_block_h = reg_rows * reg_cell_h + (reg_rows - 1) * RESOURCE_GAP
+        if nm_res:
+            nm_row_w = len(nm_res) * nm_cell_w + (len(nm_res) - 1) * RESOURCE_GAP
+            res_block_w = max(res_block_w, nm_row_w)
+            if res_block_h > 0:
+                res_block_h += RESOURCE_GAP
+            res_block_h += nm_cell_h
+
         content_w = max(children_w, res_block_w)
         content_h = children_h
-        # For non-VPC groups with resources and children, stack resources below children
-        if rtype not in ("aws_vpc",) and res_block_h > 0 and children_h > 0:
+        # Add space for resource block below children
+        if rtype == "aws_vpc":
+            if res_block_h > 0:
+                content_h += SUBNET_SPACING + res_block_h
+                content_w = max(children_w, res_block_w + 2 * CONTAINER_PAD_SIDE)
+        elif res_block_h > 0 and children_h > 0:
             content_h += SUBNET_SPACING + res_block_h
-        elif rtype not in ("aws_vpc",) and res_block_h > 0:
+        elif res_block_h > 0:
             content_h = res_block_h
 
         node.w = max(content_w + 2 * CONTAINER_PAD_SIDE, MIN_CONTAINER_W)
@@ -1032,11 +1042,6 @@ def render_drawio(tfdata, outfile, source, layout):
         if not node.resources:
             return
 
-        # Use wider grid for region/account containers (resources outside VPCs)
-        per_row = REGION_RESOURCES_PER_ROW if node.resource_type in (
-            "tv_aws_region", "aws_account",
-        ) else RESOURCES_PER_ROW
-
         # Split into regular resources and networkmanager resources
         regular = [(r, _estimate_label_footprint(r[2])) for r in node.resources
                     if not r[1].startswith("aws_networkmanager_")]
@@ -1050,6 +1055,16 @@ def render_drawio(tfdata, outfile, source, layout):
             if node.resource_type in ("tv_aws_region", "aws_account"):
                 cell_w = min(cell_w, REGION_MAX_CELL_W)
             cell_h = max(fh for _, (_, fh) in regular)
+            # Calculate how many columns fit in the container width
+            avail_w = node.w - 2 * CONTAINER_PAD_SIDE
+            if cell_w > 0 and avail_w > 0:
+                per_row = max(
+                    MIN_RESOURCES_PER_ROW,
+                    int((avail_w + RESOURCE_GAP) // (cell_w + RESOURCE_GAP)),
+                )
+            else:
+                per_row = MIN_RESOURCES_PER_ROW
+            per_row = min(per_row, len(regular))
             for i, ((rkey, rtype, rlabel), _) in enumerate(regular):
                 col = i % per_row
                 row = i // per_row
