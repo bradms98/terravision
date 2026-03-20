@@ -111,7 +111,6 @@ RESOURCE_HANDLER_CONFIGS = {
                         "aws_efs_file_system",
                         "aws_ssm_parameter",
                         "aws_kms_key",
-                        "aws_eip",
                     ],
                     "group_name": "aws_group.shared_services",
                 },

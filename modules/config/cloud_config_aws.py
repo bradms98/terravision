@@ -95,12 +95,6 @@ AWS_CONSOLIDATED_NODES = [
         }
     },
     {
-        "aws_eip": {
-            "resource_name": "aws_eip.elastic_ip",
-            "import_location": "resource_classes.eip.eip",
-        }
-    },
-    {
         "aws_autoscaling_policy": {
             "resource_name": "aws_autoscaling_policy.autoscaling_policy",
             "import_location": "resource_classes.aws.compute",

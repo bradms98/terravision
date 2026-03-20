@@ -543,7 +543,11 @@ def render_drawio(tfdata, outfile, source, layout):
                         seen_rt_in_subnet.add(rt_key)
                 continue  # always skip the association itself
 
-            if child_key in assigned_resources:
+            # Resources that legitimately appear in multiple subnets
+            # (e.g. TGW attachments span all subnets in a VPC) should not
+            # be blocked by the assigned_resources de-duplication.
+            _ALLOW_MULTI_SUBNET = {"aws_ec2_transit_gateway_vpc_attachment"}
+            if child_key in assigned_resources and child_type not in _ALLOW_MULTI_SUBNET:
                 continue
             if child_key in descendant_keys:
                 continue
