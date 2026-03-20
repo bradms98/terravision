@@ -158,6 +158,7 @@ AWS_GROUP_NODES = [
     "aws_autoscaling_group",
     "aws_subnet",
     "aws_security_group",
+    "aws_s3_bucket",
     "tv_aws_onprem",
     "tv_aws_region",
 ]
@@ -424,6 +425,24 @@ AWS_ATTRIBUTE_RELATIONSHIPS = [
 AWS_SKIP_SINGULAR_EXPANSION = [
     "aws_eks_fargate_profile",
     "aws_eks_node_group",
+]
+
+# S3 ancillary resource types that should be grouped inside their parent bucket
+AWS_S3_ANCILLARY_TYPES = [
+    "aws_s3_bucket_policy",
+    "aws_s3_bucket_server_side_encryption_configuration",
+    "aws_s3_bucket_public_access_block",
+    "aws_s3_bucket_lifecycle_configuration",
+    "aws_s3_bucket_versioning",
+    "aws_s3_bucket_ownership_controls",
+    "aws_s3_bucket_intelligent_tiering_configuration",
+    "aws_s3_bucket_acl",
+    "aws_s3_bucket_cors_configuration",
+    "aws_s3_bucket_logging",
+    "aws_s3_bucket_notification",
+    "aws_s3_bucket_object_lock_configuration",
+    "aws_s3_bucket_replication_configuration",
+    "aws_s3_bucket_website_configuration",
 ]
 
 AWS_ACRONYMS_LIST = [
