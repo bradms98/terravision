@@ -788,9 +788,32 @@ def _inject_region_account_hierarchy(tfdata: Dict[str, Any]) -> None:
     if not vpc_resources:
         return
 
-    # Create region node that contains the VPCs
+    # Collect all resources that are already children of a GROUP_NODE
+    # so we can identify truly top-level group nodes
+    nested_children = set()
+    for resource in list(graphdict.keys()):
+        resource_type = helpers.get_no_module_name(resource).split(".")[0]
+        if resource_type in GROUP_NODES:
+            for child in graphdict.get(resource, []):
+                nested_children.add(child)
+
+    # Find non-VPC GROUP_NODES that are top-level (not nested inside another
+    # group). These are containers like aws_s3_bucket that sit outside VPCs
+    # and need to be region children so _build_tree() can discover them.
+    hierarchy_types = {"aws_vpc", "aws_account", "tv_aws_region", "tv_aws_onprem"}
+    non_vpc_groups = []
+    for resource in list(graphdict.keys()):
+        resource_type = helpers.get_no_module_name(resource).split(".")[0]
+        if (
+            resource_type in GROUP_NODES
+            and resource_type not in hierarchy_types
+            and resource not in nested_children
+        ):
+            non_vpc_groups.append(resource)
+
+    # Create region node that contains VPCs and top-level non-VPC groups
     region_key = f"tv_aws_region.{region}"
-    graphdict[region_key] = vpc_resources
+    graphdict[region_key] = vpc_resources + non_vpc_groups
 
     # Create account node that contains the region
     account_key = "aws_account.account"

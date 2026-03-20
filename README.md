@@ -352,6 +352,7 @@ The `--simplified` flag works with both `draw` and `graphdata` commands and is s
 - **[Resource Handler Guide](docs/RESOURCE_HANDLER_GUIDE.md)** - Handler architecture
 - **[Contributing Guide](CONTRIBUTING.md)** - How to contribute
 - **[Developer Guide](docs/developer_guide.md)** - Development setup
+- **[QA Testing Guide](docs/QA_TESTING.md)** - Manual QA testing with Docker and Scalr
 
 ### Advanced Topics
 
@@ -496,6 +497,77 @@ generate-diagram:
 ```
 
 **Full CI/CD guide (GitHub, GitLab, Jenkins, Azure DevOps, generic)**: See [docs/CICD_INTEGRATION.md](docs/CICD_INTEGRATION.md)
+
+---
+
+## Development Testing with Docker (Scalr Entrypoint)
+
+When developing terravision locally, use the Docker container with the Scalr entrypoint to test against real infrastructure. The entrypoint (`docker/entrypoint.sh`) fetches plan JSON and state from Scalr, then runs terravision to generate a diagram.
+
+### Build the image
+
+```sh
+docker build -t terravision:test .
+```
+
+### Required environment variables
+
+| Variable | Description | Example |
+|---|---|---|
+| `TF_API_TOKEN` | Scalr API token | (from macOS Keychain or Scalr UI) |
+| `SCALR_HOSTNAME` | Scalr instance hostname | `sunward.scalr.io` |
+| `WORKSPACE_ID` | Scalr workspace ID | `ws-xxxxxxxxxx` |
+
+### Optional environment variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `TF_SOURCE` | `.` | Path to terraform source inside `/workspace/source` |
+| `OUTPUT_FORMAT` | `drawio` | `drawio`, `png`, or `both` |
+| `OUTPUT_PATH` | `docs/architecture` | Output directory relative to source |
+| `RUN_STATUS_FILTER` | `applied` | `applied` (post-apply) or `planned` (speculative) |
+| `DIAGRAM_FILTER` | `network` | terravision `--filter` value, or `none` to disable |
+| `GH_TOKEN` | (none) | GitHub token for cloning private modules |
+
+### Run against a terraform repo
+
+Mount your terraform repo to `/workspace/source` and pass the Scalr credentials:
+
+```sh
+docker run --rm \
+  -e TF_API_TOKEN="$(security find-generic-password -s scalr-api-token -w)" \
+  -e SCALR_HOSTNAME="sunward.scalr.io" \
+  -e WORKSPACE_ID="ws-xxxxxxxxxx" \
+  -e DIAGRAM_FILTER="none" \
+  -v /path/to/your/terraform/repo:/workspace/source \
+  terravision:test
+```
+
+The output diagram is written to `<repo>/docs/architecture/architecture.drawio` (or `.png` depending on `OUTPUT_FORMAT`).
+
+### Example: test against aws_prod_data
+
+```sh
+docker build -t terravision:test . && \
+docker run --rm \
+  -e TF_API_TOKEN="$SCALR_TOKEN" \
+  -e SCALR_HOSTNAME="sunward.scalr.io" \
+  -e WORKSPACE_ID="ws-v0p1hbrb6r7sjbomp" \
+  -e DIAGRAM_FILTER="none" \
+  -v ~/git/aws_prod_data:/workspace/source \
+  terravision:test
+```
+
+Then open `~/git/aws_prod_data/docs/architecture/architecture.drawio` in draw.io to inspect the result.
+
+### What the entrypoint does
+
+1. Fetches the latest run (applied or planned) from Scalr for the workspace
+2. Downloads the plan JSON and current state file
+3. If the plan has no real changes, uses **state-only mode** (skips `terraform graph`)
+4. Otherwise, runs `terraform init` + `terraform graph` in the source directory
+5. Calls `terravision draw` with the appropriate `--planfile`, `--graphfile`, and/or `--statefile` flags
+6. Writes output to the `OUTPUT_PATH` directory
 
 ---
 

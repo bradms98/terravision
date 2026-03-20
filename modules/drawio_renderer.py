@@ -218,6 +218,7 @@ def render_drawio(tfdata, outfile, source, layout):
         source: Source path for attribution
         layout: Layout mode (ignored — we always produce nested containers)
     """
+    from modules import drawing as drawing_module
     from modules.drawing import (
         _deduplicate_az_subnets,
         _inject_region_account_hierarchy,
@@ -233,6 +234,10 @@ def render_drawio(tfdata, outfile, source, layout):
     GROUP_NODES = constants["GROUP_NODES"]
     EDGE_NODES = constants["EDGE_NODES"]
     OUTER_NODES = constants["OUTER_NODES"]
+
+    # Set drawing module-level GROUP_NODES so _inject_region_account_hierarchy
+    # can identify non-VPC group containers (e.g. aws_s3_bucket)
+    drawing_module.GROUP_NODES = GROUP_NODES
 
     # Prepare hierarchy
     _deduplicate_az_subnets(tfdata)
