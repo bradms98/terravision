@@ -35,7 +35,7 @@ Ensure you have the following installed:
 
 ```bash
 # Clone the repository
-git clone https://github.com/patrickchugh/terravision.git
+git clone https://github.com/bradms98/terravision.git
 cd terravision
 
 # Install dependencies with Poetry (recommended)

@@ -14,10 +14,10 @@ TerraVision securely runs 100% Client Side without any dependency or access to y
 ## Status
 
 
-[![lint-and-test](https://github.com/patrickchugh/terravision/actions/workflows/lint-and-test.yml/badge.svg)](https://github.com/patrickchugh/terravision/actions/workflows/lint-and-test.yml)
+[![lint-and-test](https://github.com/bradms98/terravision/actions/workflows/lint-and-test.yml/badge.svg)](https://github.com/bradms98/terravision/actions/workflows/lint-and-test.yml)
 >>>>>>> 003-azure-handler-implementation
 
-[![lint-and-test](https://github.com/patrickchugh/terravision/actions/workflows/lint-and-test.yml/badge.svg)](https://github.com/patrickchugh/terravision/actions/workflows/lint-and-test.yml)
+[![lint-and-test](https://github.com/bradms98/terravision/actions/workflows/lint-and-test.yml/badge.svg)](https://github.com/bradms98/terravision/actions/workflows/lint-and-test.yml)
 
 ## Supported Cloud Providers
 
@@ -154,7 +154,7 @@ graph TD
 
 ```bash
 # Clone the repository
-git clone https://github.com/patrickchugh/terravision.git
+git clone https://github.com/bradms98/terravision.git
 cd terravision
 
 # Install Python dependencies
@@ -174,7 +174,7 @@ export PATH=$PATH:$(pwd)
 
 ```powershell
 # Clone the repository
-git clone https://github.com/patrickchugh/terravision.git
+git clone https://github.com/bradms98/terravision.git
 cd terravision
 
 # Install Python dependencies
@@ -197,7 +197,7 @@ curl -sSL https://install.python-poetry.org | python3 -
 (Invoke-WebRequest -Uri https://install.python-poetry.org -UseBasicParsing).Content | py -
 
 # Clone and install with Poetry
-git clone https://github.com/patrickchugh/terravision.git
+git clone https://github.com/bradms98/terravision.git
 cd terravision
 poetry install
 
@@ -601,7 +601,7 @@ jobs:
 
       - name: Install TerraVision
         run: |
-          git clone https://github.com/patrickchugh/terravision.git
+          git clone https://github.com/bradms98/terravision.git
           cd terravision
           pip install -r requirements.txt
 
@@ -659,7 +659,7 @@ jobs:
         
       - name: Install TerraVision
         run: |
-          git clone https://github.com/patrickchugh/terravision.git
+          git clone https://github.com/bradms98/terravision.git
           cd terravision
           pip install -r requirements.txt
           

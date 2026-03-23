@@ -2,14 +2,14 @@
 
 **AI-Powered Terraform to Architecture Diagram Generator**
 
-[![lint-and-test](https://github.com/patrickchugh/terravision/actions/workflows/lint-and-test.yml/badge.svg)](https://github.com/patrickchugh/terravision/actions/workflows/lint-and-test.yml)
+[![lint-and-test](https://github.com/bradms98/terravision/actions/workflows/lint-and-test.yml/badge.svg)](https://github.com/bradms98/terravision/actions/workflows/lint-and-test.yml)
 [![PyPI version](https://img.shields.io/pypi/v/terravision?style=flat-square)](https://pypi.org/project/terravision/)
 [![PyPI downloads](https://img.shields.io/pypi/dm/terravision?style=flat-square)](https://pypi.org/project/terravision/)
 [![Python version](https://img.shields.io/pypi/pyversions/terravision?style=flat-square)](https://pypi.org/project/terravision/)
-[![GitHub stars](https://img.shields.io/github/stars/patrickchugh/terravision?style=flat-square)](https://github.com/patrickchugh/terravision/stargazers)
-[![GitHub forks](https://img.shields.io/github/forks/patrickchugh/terravision?style=flat-square)](https://github.com/patrickchugh/terravision/network)
-[![GitHub issues](https://img.shields.io/github/issues/patrickchugh/terravision?style=flat-square)](https://github.com/patrickchugh/terravision/issues)
-[![License](https://img.shields.io/github/license/patrickchugh/terravision?style=flat-square)](https://github.com/patrickchugh/terravision/blob/main/LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/bradms98/terravision?style=flat-square)](https://github.com/bradms98/terravision/stargazers)
+[![GitHub forks](https://img.shields.io/github/forks/bradms98/terravision?style=flat-square)](https://github.com/bradms98/terravision/network)
+[![GitHub issues](https://img.shields.io/github/issues/bradms98/terravision?style=flat-square)](https://github.com/bradms98/terravision/issues)
+[![License](https://img.shields.io/github/license/bradms98/terravision?style=flat-square)](https://github.com/bradms98/terravision/blob/main/LICENSE)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg?style=flat-square)](https://github.com/psf/black)
 
 > **⚠️ Alpha Software Notice**  
@@ -95,27 +95,27 @@ TerraVision automatically converts your Terraform code into professional cloud a
 
 ### Option 1 - Docker
 
-You can run `terravision` from within a Docker container. Pull the pre-built image from Docker Hub:
+You can run `terravision` from within a Docker container. Pull the pre-built image from GHCR:
 
 ```sh
-docker pull patrickchugh/terravision:latest
+docker pull ghcr.io/bradms98/terravision:latest
 ```
 
 Or build it yourself from source:
 
 ```sh
-git clone https://github.com/patrickchugh/terravision.git && cd terravision
-docker build -t patrickchugh/terravision .
+git clone https://github.com/bradms98/terravision.git && cd terravision
+docker build -t ghcr.io/bradms98/terravision .
 ```
 
 Then use it with any of your terraform files by mounting your local directory to the container:
 
-If you pulled from Docker Hub, use `patrickchugh/terravision` as the image name. If you built locally, use `terravision` (or whatever tag you chose).
+If you pulled from GHCR, use `ghcr.io/bradms98/terravision` as the image name. If you built locally, use `terravision` (or whatever tag you chose).
 
 ```sh
-# Using Docker Hub image
-$ docker run --rm -it -v $(pwd):/project patrickchugh/terravision draw --source /yourproject/ --varfile /project/your.tfvars
-$ docker run --rm -it -v $(pwd):/project patrickchugh/terravision draw --source https://github.com/your-repo/terraform-examples.git//mysubfolder/secondfolder/
+# Using GHCR image
+$ docker run --rm -it -v $(pwd):/project ghcr.io/bradms98/terravision draw --source /yourproject/ --varfile /project/your.tfvars
+$ docker run --rm -it -v $(pwd):/project ghcr.io/bradms98/terravision draw --source https://github.com/your-repo/terraform-examples.git//mysubfolder/secondfolder/
 
 # Using self-built image
 $ docker run --rm -it -v $(pwd):/project terravision draw --source /yourproject/ --varfile /project/your.tfvars
@@ -128,9 +128,9 @@ For example, for AWS:
 
 ```sh
 # Example 1 Mount AWS Credentials folder
-docker run -it --rm  -v $(pwd):/project  -v ~/.aws:/home/terravision/.aws:ro  patrickchugh/terravision draw --source /path/to/terraform_source
+docker run -it --rm  -v $(pwd):/project  -v ~/.aws:/home/terravision/.aws:ro  ghcr.io/bradms98/terravision draw --source /path/to/terraform_source
 # Example 2 Pass credentials as environment variables
-docker run -it --rm  -v $(pwd):/project  -e AWS_ACCESS_KEY_ID=your-access-key -e AWS_SECRET_ACCESS_KEY=your-secret-key  patrickchugh/terravision draw --source /path/to/terraform_source
+docker run -it --rm  -v $(pwd):/project  -e AWS_ACCESS_KEY_ID=your-access-key -e AWS_SECRET_ACCESS_KEY=your-secret-key  ghcr.io/bradms98/terravision draw --source /path/to/terraform_source
 ```
 
 ### Option 2 - Local Install
@@ -160,14 +160,14 @@ TerraVision needs Terraform to successfully run `terraform plan` to parse your i
 If you have [Nix](https://nixos.org/download/) installed with flakes enabled, you can enter a development shell with `terravision` and all dependencies available:
 
 ```bash
-git clone https://github.com/patrickchugh/terravision.git && cd terravision
+git clone https://github.com/bradms98/terravision.git && cd terravision
 nix develop
 ```
 
 This provides `terravision`, `graphviz`, `terraform`, and `git` in your shell. You can also run it directly without cloning:
 
 ```bash
-nix run github:patrickchugh/terravision -- draw --source /path/to/terraform --show
+nix run github:bradms98/terravision -- draw --source /path/to/terraform --show
 ```
 
 ### Try It Out!
@@ -176,7 +176,7 @@ Generate your first diagram using our example Terraform code:
 
 ```bash
 
-git clone https://github.com/patrickchugh/terravision.git
+git clone https://github.com/bradms98/terravision.git
 cd terravision
 
 # Example 1: EKS cluster with fully managed nodes (auto)
@@ -391,7 +391,7 @@ graph LR
 
 ### GitHub Actions
 
-Use the official [TerraVision Action](https://github.com/patrickchugh/terravision-action):
+Use the official [TerraVision Action](https://github.com/bradms98/terravision-action):
 
 ```yaml
 # .github/workflows/architecture-diagrams.yml
@@ -421,7 +421,7 @@ jobs:
           role-session-name: ghasession
           aws-region: us-east-1
 
-      - uses: patrickchugh/terravision-action@v2
+      - uses: bradms98/terravision-action@v2
         with:
           source: .
           format: png
@@ -488,7 +488,7 @@ Use the Docker image directly — no additional setup needed:
 ```yaml
 # GitLab CI example
 generate-diagram:
-  image: patrickchugh/terravision:latest
+  image: bradms98/terravision:latest
   script:
     - terravision draw --source ./infrastructure --outfile architecture --format png
   artifacts:
@@ -584,8 +584,8 @@ We welcome contributions! See [CONTRIBUTING.md](docs/CONTRIBUTING.md) for:
 
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/patrickchugh/terravision/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/patrickchugh/terravision/discussions)
+- **Issues**: [GitHub Issues](https://github.com/bradms98/terravision/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/bradms98/terravision/discussions)
 - **Documentation**: [docs/](docs/)
 
 ---

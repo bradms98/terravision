@@ -80,7 +80,7 @@ This method installs packages globally and is suitable for casual users.
 
 ```bash
 # Clone repository
-git clone https://github.com/patrickchugh/terravision.git
+git clone https://github.com/bradms98/terravision.git
 cd terravision
 
 # Install Python dependencies
@@ -103,7 +103,7 @@ terravision --version
 
 ```powershell
 # Clone repository
-git clone https://github.com/patrickchugh/terravision.git
+git clone https://github.com/bradms98/terravision.git
 cd terravision
 
 # Install Python dependencies
@@ -139,7 +139,7 @@ curl -sSL https://install.python-poetry.org | python3 -
 
 ```bash
 # Clone repository
-git clone https://github.com/patrickchugh/terravision.git
+git clone https://github.com/bradms98/terravision.git
 cd terravision
 
 # Install dependencies in virtual environment

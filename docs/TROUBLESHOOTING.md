@@ -562,8 +562,8 @@ terravision graphdata --help
 ```
 
 ### Report Issues
-- **GitHub Issues**: https://github.com/patrickchugh/terravision/issues
-- **Discussions**: https://github.com/patrickchugh/terravision/discussions
+- **GitHub Issues**: https://github.com/bradms98/terravision/issues
+- **Discussions**: https://github.com/bradms98/terravision/discussions
 
 ### Include in Bug Reports
 1. TerraVision version: `terravision --version`

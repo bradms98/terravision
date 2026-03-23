@@ -457,4 +457,4 @@ terravision graphdata --source ./terraform --show_services
 
 - **[Usage Guide](USAGE_GUIDE.md)** - Learn more TerraVision commands
 - **[CI/CD Integration](CICD_INTEGRATION.md)** - Automate with annotations
-- **[Examples Repository](https://github.com/patrickchugh/terravision-examples)** - See more annotation examples
+- **[Examples Repository](https://github.com/bradms98/terravision-examples)** - See more annotation examples

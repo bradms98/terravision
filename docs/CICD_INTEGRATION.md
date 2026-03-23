@@ -21,7 +21,7 @@ TerraVision can be integrated into any CI/CD system using one of these methods:
 
 ### Using the TerraVision Action (Recommended)
 
-The [TerraVision Action](https://github.com/patrickchugh/terravision-action) handles installation of TerraVision and Graphviz automatically. You only need to provide Terraform.
+The [TerraVision Action](https://github.com/bradms98/terravision-action) handles installation of TerraVision and Graphviz automatically. You only need to provide Terraform.
 
 ```yaml
 name: Update Architecture Diagrams
@@ -39,7 +39,7 @@ jobs:
 
       - uses: hashicorp/setup-terraform@v3
 
-      - uses: patrickchugh/terravision-action@v2
+      - uses: bradms98/terravision-action@v2
         with:
           source: ./infrastructure
           outfile: docs/architecture
@@ -74,7 +74,7 @@ steps:
       role-to-assume: arn:aws:iam::123456789012:role/diagram-role
       aws-region: us-east-1
 
-  - uses: patrickchugh/terravision-action@v2
+  - uses: bradms98/terravision-action@v2
     with:
       source: ./infrastructure
       format: svg
@@ -100,7 +100,7 @@ steps:
       terraform show -json tfplan.bin > plan.json
       terraform graph > graph.dot
 
-  - uses: patrickchugh/terravision-action@v2
+  - uses: bradms98/terravision-action@v2
     with:
       source: ./infrastructure
       planfile: infrastructure/plan.json
@@ -121,7 +121,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
 
-      - uses: patrickchugh/terravision-action@v2
+      - uses: bradms98/terravision-action@v2
         with:
           source: ./terraform
           outfile: docs/architecture-${{ matrix.environment }}
@@ -136,7 +136,7 @@ steps:
   - uses: actions/checkout@v4
   - uses: hashicorp/setup-terraform@v3
 
-  - uses: patrickchugh/terravision-action@v2
+  - uses: bradms98/terravision-action@v2
     with:
       source: ./infrastructure
       outfile: docs/architecture
@@ -167,7 +167,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
 
-      - uses: patrickchugh/terravision-action@v2
+      - uses: bradms98/terravision-action@v2
         with:
           source: ./infrastructure
           outfile: pr-architecture
@@ -197,7 +197,7 @@ Alternatively, use the Docker image for a fully self-contained step:
 
 ```yaml
 - name: Generate Diagram
-  uses: docker://patrickchugh/terravision:latest
+  uses: docker://ghcr.io/bradms98/terravision:latest
   with:
     args: draw --source ./infrastructure --outfile architecture --format png
 ```
@@ -208,7 +208,7 @@ Alternatively, use the Docker image for a fully self-contained step:
 
 ### Using the Docker Image (Recommended)
 
-The `patrickchugh/terravision` Docker image includes Terraform, Graphviz, and TerraVision — no additional setup required.
+The `ghcr.io/bradms98/terravision` Docker image includes Terraform, Graphviz, and TerraVision — no additional setup required.
 
 ```yaml
 # .gitlab-ci.yml
@@ -217,7 +217,7 @@ stages:
 
 generate-diagram:
   stage: diagram
-  image: patrickchugh/terravision:latest
+  image: ghcr.io/bradms98/terravision:latest
   script:
     - terravision draw --source ./infrastructure --outfile architecture --format png
     - terravision draw --source ./infrastructure --outfile architecture --format svg
@@ -237,7 +237,7 @@ generate-diagram:
 ```yaml
 generate-diagram:
   stage: diagram
-  image: patrickchugh/terravision:latest
+  image: ghcr.io/bradms98/terravision:latest
   parallel:
     matrix:
       - ENVIRONMENT: [dev, staging, prod]
@@ -257,7 +257,7 @@ generate-diagram:
 ```yaml
 generate-diagram:
   stage: diagram
-  image: patrickchugh/terravision:latest
+  image: ghcr.io/bradms98/terravision:latest
   variables:
     AWS_ACCESS_KEY_ID: $AWS_ACCESS_KEY_ID
     AWS_SECRET_ACCESS_KEY: $AWS_SECRET_ACCESS_KEY
@@ -274,7 +274,7 @@ generate-diagram:
 ```yaml
 generate-diagram:
   stage: diagram
-  image: patrickchugh/terravision:latest
+  image: ghcr.io/bradms98/terravision:latest
   script:
     - terravision draw --source ./infrastructure --outfile docs/architecture --format png
     - git config user.name "GitLab CI"
@@ -308,7 +308,7 @@ spec:
 ---
 
 "generate-diagram":
-  image: patrickchugh/terravision:latest
+  image: ghcr.io/bradms98/terravision:latest
   stage: $[[ inputs.stage ]]
   script:
     - terravision draw --source $[[ inputs.source ]] --outfile $[[ inputs.output ]] --format $[[ inputs.format ]]
@@ -338,7 +338,7 @@ include:
 pipeline {
     agent {
         docker {
-            image 'patrickchugh/terravision:latest'
+            image 'ghcr.io/bradms98/terravision:latest'
         }
     }
 
@@ -378,7 +378,7 @@ pipeline {
 pipeline {
     agent {
         docker {
-            image 'patrickchugh/terravision:latest'
+            image 'ghcr.io/bradms98/terravision:latest'
         }
     }
 
@@ -465,7 +465,7 @@ trigger:
 pool:
   vmImage: 'ubuntu-latest'
 
-container: patrickchugh/terravision:latest
+container: ghcr.io/bradms98/terravision:latest
 
 steps:
 - script: |
@@ -533,7 +533,7 @@ Run the Docker image with your source mounted:
 ```bash
 docker run --rm \
   -v $(pwd):/project \
-  patrickchugh/terravision:latest \
+  ghcr.io/bradms98/terravision:latest \
   draw --source ./infrastructure --outfile architecture --format png
 ```
 
@@ -556,7 +556,7 @@ version: 2.1
 jobs:
   generate-diagram:
     docker:
-      - image: patrickchugh/terravision:latest
+      - image: ghcr.io/bradms98/terravision:latest
     steps:
       - checkout
       - run:
@@ -578,7 +578,7 @@ workflows:
 
 ```yaml
 # bitbucket-pipelines.yml
-image: patrickchugh/terravision:latest
+image: ghcr.io/bradms98/terravision:latest
 
 pipelines:
   branches:
@@ -701,7 +701,7 @@ terraform-plan:
 
 generate-diagram:
   stage: diagram
-  image: patrickchugh/terravision:latest
+  image: ghcr.io/bradms98/terravision:latest
   needs: [terraform-plan]
   script:
     - terravision draw
@@ -744,7 +744,7 @@ pipeline {
 
         stage('Generate Diagram') {
             agent {
-                docker { image 'patrickchugh/terravision:latest' }
+                docker { image 'ghcr.io/bradms98/terravision:latest' }
             }
             steps {
                 unstash 'tf-outputs'
@@ -806,7 +806,7 @@ stages:
   - job: GenerateDiagram
     pool:
       vmImage: 'ubuntu-latest'
-    container: patrickchugh/terravision:latest
+    container: ghcr.io/bradms98/terravision:latest
     steps:
     - download: current
       artifact: plan-json
@@ -932,7 +932,7 @@ git commit -m "Update architecture diagrams [skip ci]"
 pip install terravision==X.Y.Z
 
 # Pin Docker image tag
-image: patrickchugh/terravision:1.0.0
+image: ghcr.io/bradms98/terravision:1.0.0
 ```
 
 ### 5. Use Annotations for Customization
