@@ -93,133 +93,114 @@ TerraVision automatically converts your Terraform code into professional cloud a
 
 ## Quick Start
 
-### Option 1 - Docker
+### Option 1 — Docker with Scalr (Recommended)
 
-You can run `terravision` from within a Docker container. Pull the pre-built image from GHCR:
+The Docker image (`ghcr.io/bradms98/terravision`) is self-contained — it includes Terraform, Graphviz, and the Scalr CLI. The entrypoint fetches plan JSON and state directly from Scalr, so no cloud credentials are needed on the machine running the container.
 
 ```sh
 docker pull ghcr.io/bradms98/terravision:latest
 ```
 
-Or build it yourself from source:
+Run it against any Scalr-managed workspace by mounting your Terraform repo and passing Scalr credentials:
+
+```sh
+docker run --rm \
+  -e TF_API_TOKEN="$SCALR_TOKEN" \
+  -e SCALR_HOSTNAME="sunward.scalr.io" \
+  -e WORKSPACE_ID="ws-xxxxxxxxxx" \
+  -v /path/to/terraform/repo:/workspace/source \
+  ghcr.io/bradms98/terravision:latest
+```
+
+Output is written to `<repo>/docs/architecture/architecture.drawio` by default.
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `TF_API_TOKEN` | Yes | | Scalr API token |
+| `SCALR_HOSTNAME` | Yes | | Scalr instance (e.g. `sunward.scalr.io`) |
+| `WORKSPACE_ID` | Yes | | Scalr workspace ID |
+| `DIAGRAM_FILTER` | No | `default` | Filter profile, or `none` to show all resources |
+| `OUTPUT_FORMAT` | No | `drawio` | `drawio`, `png`, or `both` |
+| `OUTPUT_PATH` | No | `docs/architecture` | Output directory relative to source |
+| `GH_TOKEN` | No | | GitHub token for cloning private modules |
+
+To build the image from source instead:
 
 ```sh
 git clone https://github.com/bradms98/terravision.git && cd terravision
-docker build -t ghcr.io/bradms98/terravision .
+docker build -t terravision:test .
 ```
 
-Then use it with any of your terraform files by mounting your local directory to the container:
+### Option 2 — Local CLI Install
 
-If you pulled from GHCR, use `ghcr.io/bradms98/terravision` as the image name. If you built locally, use `terravision` (or whatever tag you chose).
+Install terravision into a Python virtual environment and run it directly.
 
-```sh
-# Using GHCR image
-$ docker run --rm -it -v $(pwd):/project ghcr.io/bradms98/terravision draw --source /yourproject/ --varfile /project/your.tfvars
-$ docker run --rm -it -v $(pwd):/project ghcr.io/bradms98/terravision draw --source https://github.com/your-repo/terraform-examples.git//mysubfolder/secondfolder/
-
-# Using self-built image
-$ docker run --rm -it -v $(pwd):/project terravision draw --source /yourproject/ --varfile /project/your.tfvars
-$ docker run --rm -it -v $(pwd):/project terravision draw --source https://github.com/your-repo/terraform-examples.git//mysubfolder/secondfolder/
-```
-
-Depending on your cloud provider, you may need to pass your credentials so that OpenTofu/Terraform can run terraform plan commands
-
-For example, for AWS:
-
-```sh
-# Example 1 Mount AWS Credentials folder
-docker run -it --rm  -v $(pwd):/project  -v ~/.aws:/home/terravision/.aws:ro  ghcr.io/bradms98/terravision draw --source /path/to/terraform_source
-# Example 2 Pass credentials as environment variables
-docker run -it --rm  -v $(pwd):/project  -e AWS_ACCESS_KEY_ID=your-access-key -e AWS_SECRET_ACCESS_KEY=your-secret-key  ghcr.io/bradms98/terravision draw --source /path/to/terraform_source
-```
-
-### Option 2 - Local Install
-
-Before installing TerraVision, ensure you have:
-
-- **Python 3.10+** - [Download Python](https://www.python.org/downloads/)
-- **Terraform 1.x** - [Install Terraform](https://developer.hashicorp.com/terraform/downloads)
-- **Graphviz** - [Install Graphviz](https://graphviz.org/download/)
-- **Git** - [Install Git](https://git-scm.com/downloads)
-- **Ollama** (Optional - for local AI refinement) - [Install Ollama](https://ollama.ai/download)
-
-### Install TerraVision
+**Prerequisites:** Python 3.10+, Graphviz, Git, Terraform or OpenTofu (only needed if not using `--planfile` mode)
 
 ```bash
-pip install terravision # only if in a virtual env, if not you can use pipx install terravision instead
+git clone https://github.com/bradms98/terravision.git && cd terravision
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
 ```
 
-### Verify Terraform Setup
+**Run against local Terraform source** (requires Terraform/OpenTofu and cloud credentials):
 
-Before generating diagrams, ensure Terraform is working with `terraform init` and `terraform plan` 
+```bash
+terravision draw --source /path/to/your/terraform/code --format drawio
+```
 
-TerraVision needs Terraform to successfully run `terraform plan` to parse your infrastructure. Note that whilst cloud credentials are required for TERRAFORM to validate resources and resolve functions, TerraVision itself never accesses your cloud account. Alternatively, use `--planfile` and `--graphfile` to provide pre-generated Terraform plan and graph outputs, bypassing Terraform execution entirely.
+**Run with pre-generated plan and state** (no cloud credentials needed):
 
-### Option 3 - Nix
+```bash
+# If you have plan JSON and state from Scalr or a CI pipeline:
+terravision draw \
+  --source /path/to/terraform \
+  --planfile plan.json \
+  --statefile state.json \
+  --format drawio
 
-If you have [Nix](https://nixos.org/download/) installed with flakes enabled, you can enter a development shell with `terravision` and all dependencies available:
+# Or with a graph file for richer dependency info:
+terravision draw \
+  --source /path/to/terraform \
+  --planfile plan.json \
+  --graphfile graph.dot \
+  --format drawio
+```
+
+**Run with Scalr CLI** (fetches plan/state from Scalr, then runs terravision locally):
+
+```bash
+# Fetch plan and state from Scalr
+export SCALR_TOKEN SCALR_HOSTNAME=sunward.scalr.io
+RUN_JSON=$(scalr get-runs -filter-workspace="ws-xxx" -filter-status="applied")
+PLAN_ID=$(echo "$RUN_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['plan']['id'])")
+scalr get-json-output -plan="$PLAN_ID" > /tmp/plan.json
+
+STATE_ID=$(scalr get-current-state-version -workspace="ws-xxx" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
+scalr get-state-version-download -state_version="$STATE_ID" > /tmp/state.json
+
+# Generate diagram
+terravision draw \
+  --source /path/to/terraform \
+  --planfile /tmp/plan.json \
+  --statefile /tmp/state.json \
+  --format drawio
+```
+
+### Option 3 — Nix
+
+If you have [Nix](https://nixos.org/download/) installed with flakes enabled:
 
 ```bash
 git clone https://github.com/bradms98/terravision.git && cd terravision
 nix develop
 ```
 
-This provides `terravision`, `graphviz`, `terraform`, and `git` in your shell. You can also run it directly without cloning:
+Or run directly without cloning:
 
 ```bash
-nix run github:bradms98/terravision -- draw --source /path/to/terraform --show
-```
-
-### Try It Out!
-
-Generate your first diagram using our example Terraform code:
-
-```bash
-
-git clone https://github.com/bradms98/terravision.git
-cd terravision
-
-# Example 1: EKS cluster with fully managed nodes (auto)
-terravision draw --source tests/fixtures/aws_terraform/eks_automode --show
-
-# Example 2: Azure VM stack set
-terravision draw --source tests/fixtures/azure_terraform/test_vm_vmss --show
-
-# Example 3: From a public Git repository and only look at subfolder /aws/wordpress_fargate (note double slash)
-terravision draw --source https://github.com/patrickchugh/terraform-examples.git//aws/wordpress_fargate --show
-```
-
-**That's it!** Your diagram is saved as `architecture.png` and automatically opened.
-
-### Use Your Own Terraform Code
-
-```bash
-# Generate diagram from your Terraform directory
-terravision draw --source /path/to/your/terraform/code
-```
-
-### Use Pre-Generated Terraform Plan (No Cloud Credentials Needed)
-
-If you already have Terraform plan output (e.g. from a CI pipeline), you can generate diagrams without running Terraform:
-
-```bash
-# Step 1: Generate plan and graph files (in your Terraform environment)
-terraform plan -out=tfplan.bin
-terraform show -json tfplan.bin > plan.json
-terraform graph > graph.dot
-
-# Step 2: Generate diagram (no Terraform or cloud credentials needed)
-terravision draw --planfile plan.json --graphfile graph.dot --source ./terraform
-```
-
-This is especially useful in CI/CD pipelines where Terraform runs in one step and diagram generation happens in another. See [CI/CD Integration](docs/CICD_INTEGRATION.md) for examples.
-
-### Use TerraVision simply as a drawing engine with a simple JSON dict
-```bash
-# Generate a JSON graph file as output (default file is architecture.json)
-terravision graphdata --source tests/fixtures/aws_terraform/ecs-ec2
-# Draw a diagram from a simple pre-existing JSON graph file
-terravision draw --source tests/json/bastion-expected.json
+nix run github:bradms98/terravision -- draw --source /path/to/terraform --format drawio --show
 ```
 
 
@@ -254,12 +235,14 @@ terravision draw --source ./terraform --show
 | Option        | Description                   | Example                    |
 | ------------- | ----------------------------- | -------------------------- |
 | `--source`    | Terraform code location       | `./terraform` or Git URL   |
-| `--format`    | Output format (see [Supported Formats](#supported-output-formats)) | `png`, `svg`, `pdf`, `jpg`, etc. |
+| `--format`    | Output format (see [Supported Formats](#supported-output-formats)) | `drawio`, `png`, `svg`, etc. |
 | `--outfile`   | Output filename               | `architecture` (default)   |
 | `--workspace` | Terraform workspace           | `production`, `staging`    |
 | `--varfile`   | Variable file                 | `prod.tfvars`              |
 | `--planfile`  | Pre-generated plan JSON file  | `plan.json`                |
 | `--graphfile` | Pre-generated graph DOT file  | `graph.dot`                |
+| `--statefile` | Terraform state JSON file     | `state.json`               |
+| `--filter`    | Filter profile from `filters/` dir | `default`, `network`  |
 | `--simplified` | Simplified high-level view   | (flag)                     |
 | `--show`      | Open diagram after generation | (flag)                     |
 | `--debug`     | Enable debug output           | (flag)                     |
@@ -488,67 +471,27 @@ Use the Docker image directly — no additional setup needed:
 ```yaml
 # GitLab CI example
 generate-diagram:
-  image: bradms98/terravision:latest
+  image: ghcr.io/bradms98/terravision:latest
   script:
-    - terravision draw --source ./infrastructure --outfile architecture --format png
+    - terravision draw --source ./infrastructure --outfile architecture --format drawio
   artifacts:
     paths:
-      - architecture.png
+      - architecture.drawio
 ```
 
 **Full CI/CD guide (GitHub, GitLab, Jenkins, Azure DevOps, generic)**: See [docs/CICD_INTEGRATION.md](docs/CICD_INTEGRATION.md)
 
 ---
 
-## Development Testing with Docker (Scalr Entrypoint)
+## Development
 
-When developing terravision locally, use the Docker container with the Scalr entrypoint to test against real infrastructure. The entrypoint (`docker/entrypoint.sh`) fetches plan JSON and state from Scalr, then runs terravision to generate a diagram.
-
-### Build the image
+### Building and testing locally
 
 ```sh
+# Build the Docker image from source
 docker build -t terravision:test .
-```
 
-### Required environment variables
-
-| Variable | Description | Example |
-|---|---|---|
-| `TF_API_TOKEN` | Scalr API token | (from macOS Keychain or Scalr UI) |
-| `SCALR_HOSTNAME` | Scalr instance hostname | `sunward.scalr.io` |
-| `WORKSPACE_ID` | Scalr workspace ID | `ws-xxxxxxxxxx` |
-
-### Optional environment variables
-
-| Variable | Default | Description |
-|---|---|---|
-| `TF_SOURCE` | `.` | Path to terraform source inside `/workspace/source` |
-| `OUTPUT_FORMAT` | `drawio` | `drawio`, `png`, or `both` |
-| `OUTPUT_PATH` | `docs/architecture` | Output directory relative to source |
-| `RUN_STATUS_FILTER` | `applied` | `applied` (post-apply) or `planned` (speculative) |
-| `DIAGRAM_FILTER` | `network` | terravision `--filter` value, or `none` to disable |
-| `GH_TOKEN` | (none) | GitHub token for cloning private modules |
-
-### Run against a terraform repo
-
-Mount your terraform repo to `/workspace/source` and pass the Scalr credentials:
-
-```sh
-docker run --rm \
-  -e TF_API_TOKEN="$(security find-generic-password -s scalr-api-token -w)" \
-  -e SCALR_HOSTNAME="sunward.scalr.io" \
-  -e WORKSPACE_ID="ws-xxxxxxxxxx" \
-  -e DIAGRAM_FILTER="none" \
-  -v /path/to/your/terraform/repo:/workspace/source \
-  terravision:test
-```
-
-The output diagram is written to `<repo>/docs/architecture/architecture.drawio` (or `.png` depending on `OUTPUT_FORMAT`).
-
-### Example: test against aws_prod_data
-
-```sh
-docker build -t terravision:test . && \
+# Test against a Scalr-managed workspace
 docker run --rm \
   -e TF_API_TOKEN="$SCALR_TOKEN" \
   -e SCALR_HOSTNAME="sunward.scalr.io" \
@@ -558,16 +501,24 @@ docker run --rm \
   terravision:test
 ```
 
-Then open `~/git/aws_prod_data/docs/architecture/architecture.drawio` in draw.io to inspect the result.
+### How the Docker entrypoint works
 
-### What the entrypoint does
+The entrypoint (`docker/entrypoint.sh`) is designed for Scalr-managed workspaces:
 
-1. Fetches the latest run (applied or planned) from Scalr for the workspace
-2. Downloads the plan JSON and current state file
-3. If the plan has no real changes, uses **state-only mode** (skips `terraform graph`)
-4. Otherwise, runs `terraform init` + `terraform graph` in the source directory
-5. Calls `terravision draw` with the appropriate `--planfile`, `--graphfile`, and/or `--statefile` flags
-6. Writes output to the `OUTPUT_PATH` directory
+1. Fetches the latest applied (or planned) run from Scalr
+2. Downloads the plan JSON and current state file via the Scalr CLI
+3. Runs `terraform init -backend=false` + `terraform graph` in the source directory
+4. If the plan has no real changes, uses state-only mode (skips `terraform graph`)
+5. Calls `terravision draw` with the plan, graph, and state files
+6. Writes output to `docs/architecture/` by default
+
+### Running from CLI (no Docker)
+
+```sh
+cd /path/to/terravision
+source .venv/bin/activate
+terravision draw --source /path/to/terraform --format drawio
+```
 
 ---
 
