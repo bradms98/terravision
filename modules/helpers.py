@@ -387,7 +387,9 @@ def get_resource_id(resource: str, tfdata: Dict[str, Any]) -> str:
     return rid
 
 
-def build_rich_label(resource: str, tfdata: Dict[str, Any], is_group: bool = False) -> str:
+def build_rich_label(
+    resource: str, tfdata: Dict[str, Any], is_group: bool = False
+) -> str:
     """Build a multi-line label with resource type, Name tag, and resource ID.
 
     Line 1: Resource type (e.g., "EC2", "Transit Gateway Attachment")

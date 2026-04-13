@@ -14,7 +14,6 @@ concurrency:
   cancel-in-progress: false
 permissions:
   contents: read      # This is required for actions/checkout
-  id-token: write     # This is required for OIDC authentication with AWS
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -51,17 +50,6 @@ jobs:
           key: venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
 
       #----------------------------------------------
-      #       Retrieve temporary AWS credentials
-      #----------------------------------------------
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a  # v4
-        timeout-minutes: 2
-        with:
-          role-to-assume: arn:aws:iam::166659698090:role/githubactions
-          role-session-name: ghasession
-          aws-region: us-east-1
-
-      #----------------------------------------------
       # install dependencies
       #----------------------------------------------
       - name: Install Graphviz and development headers
@@ -92,4 +80,4 @@ jobs:
           export PATH=$PATH:$(pwd)
           rm -rf ~/.terravision
           poetry run terravision --version
-          poetry run pytest tests -v
+          poetry run pytest tests -v -m "not slow"

@@ -11,13 +11,17 @@ from typing import Any, Dict, List, Optional, Tuple
 import click
 
 import modules.helpers as helpers
-from modules.drawio_shapes import get_group_style, get_resource_style, apply_change_highlight
+from modules.drawio_shapes import (
+    get_group_style,
+    get_resource_style,
+    apply_change_highlight,
+)
 
 # Layout constants
-ICON_W, ICON_H = 48, 48           # The actual mxCell icon size
-RESOURCE_GAP = 15                  # Minimum gap between resource footprints
-MIN_RESOURCES_PER_ROW = 3             # minimum columns for flat icon grids
-REGION_MAX_CELL_W = 200               # cap cell width for region/account flat icon grids
+ICON_W, ICON_H = 48, 48  # The actual mxCell icon size
+RESOURCE_GAP = 15  # Minimum gap between resource footprints
+MIN_RESOURCES_PER_ROW = 3  # minimum columns for flat icon grids
+REGION_MAX_CELL_W = 200  # cap cell width for region/account flat icon grids
 CONTAINER_PAD_TOP = 60
 CONTAINER_PAD_SIDE = 20
 CONTAINER_PAD_BOTTOM = 20
@@ -26,18 +30,26 @@ SUBNET_SPACING = 15
 VPC_SPACING = 30
 MIN_CONTAINER_W = 160
 MIN_CONTAINER_H = 100
-MAX_LABEL_LINE_LEN = 22           # max chars per line in resource labels
-FONT_CHAR_W = 7                   # approximate px per character at fontSize=12
-FONT_LINE_H = 16                  # approximate line height in px
-LABEL_GAP = 4                     # gap between icon bottom and label top
+MAX_LABEL_LINE_LEN = 22  # max chars per line in resource labels
+FONT_CHAR_W = 7  # approximate px per character at fontSize=12
+FONT_LINE_H = 16  # approximate line height in px
+LABEL_GAP = 4  # gap between icon bottom and label top
 
 # Infrastructure group types that use standard container rendering.
 # Any GROUP_NODE not in this set is a "service group" (e.g. S3 bucket,
 # backup vault) rendered with icon + property-list layout.
 INFRASTRUCTURE_GROUP_TYPES = {
-    "aws_vpc", "aws_az", "tv_aws_az", "aws_subnet", "aws_account",
-    "tv_aws_region", "tv_aws_onprem", "aws_autoscaling_group",
-    "aws_appautoscaling_target", "aws_group", "aws_security_group",
+    "aws_vpc",
+    "aws_az",
+    "tv_aws_az",
+    "aws_subnet",
+    "aws_account",
+    "tv_aws_region",
+    "tv_aws_onprem",
+    "aws_autoscaling_group",
+    "aws_appautoscaling_target",
+    "aws_group",
+    "aws_security_group",
 }
 
 # Property-list text cell style for service group containers
@@ -51,13 +63,14 @@ SERVICE_GROUP_ICON_X = 15
 SERVICE_GROUP_ICON_Y = 25
 SERVICE_GROUP_TEXT_X = 100
 SERVICE_GROUP_TEXT_Y = 25
-SERVICE_GROUP_COLUMNS = 3             # columns for grid layout of service group containers
-SERVICE_GROUP_COL_GAP = 15            # horizontal gap between service group columns
+SERVICE_GROUP_COLUMNS = 3  # columns for grid layout of service group containers
+SERVICE_GROUP_COL_GAP = 15  # horizontal gap between service group columns
 
 
 # =============================================================================
 # DrawioDocument — XML builder
 # =============================================================================
+
 
 class DrawioDocument:
     """Builds an mxfile XML document with auto-incrementing cell IDs."""
@@ -210,6 +223,7 @@ class DrawioDocument:
 # LayoutNode — tracks hierarchy for size / position computation
 # =============================================================================
 
+
 def _estimate_label_footprint(label):
     """Estimate the pixel footprint of a resource icon + its label.
 
@@ -236,10 +250,14 @@ class LayoutNode:
         self.resource_type = resource_type
         self.label = label
         self.is_group = is_group
-        self.is_service_group = False  # True for icon+property-list groups (S3, backup vault, etc.)
-        self.children = []       # child LayoutNodes (groups)
-        self.resources = []      # (resource_key, resource_type, label) tuples
-        self.resource_positions = []  # populated during layout: (key, type, label, x, y)
+        self.is_service_group = (
+            False  # True for icon+property-list groups (S3, backup vault, etc.)
+        )
+        self.children = []  # child LayoutNodes (groups)
+        self.resources = []  # (resource_key, resource_type, label) tuples
+        self.resource_positions = (
+            []
+        )  # populated during layout: (key, type, label, x, y)
         self.service_group_text = ""  # bullet-list HTML for service group property list
         self.w = 0
         self.h = 0
@@ -251,6 +269,7 @@ class LayoutNode:
 # =============================================================================
 # Main entry point
 # =============================================================================
+
 
 def render_drawio(tfdata, outfile, source, layout):
     """Generate a native draw.io XML file from tfdata.
@@ -298,7 +317,8 @@ def render_drawio(tfdata, outfile, source, layout):
         """Extract resource type, handling keys with dots inside brackets."""
         # Strip bracket content before splitting (e.g. this["10.253.0.0/24"])
         import re
-        clean = re.sub(r'\[.*?\]', '', key)
+
+        clean = re.sub(r"\[.*?\]", "", key)
         return helpers.get_no_module_name(clean).split(".")[0]
 
     def _wrap_line(text, max_len=MAX_LABEL_LINE_LEN):
@@ -321,6 +341,7 @@ def render_drawio(tfdata, outfile, source, layout):
 
     # Derive account name from source repo directory or git remote
     import os, subprocess
+
     _account_name = ""
     _source_dir = os.path.normpath(source) if source else ""
     _source_basename = os.path.basename(_source_dir) if _source_dir else ""
@@ -329,10 +350,15 @@ def render_drawio(tfdata, outfile, source, layout):
     elif _source_dir:
         # Inside Docker the mount point is generic; try git remote for repo name
         try:
-            _remote = subprocess.check_output(
-                ["git", "-C", _source_dir, "remote", "get-url", "origin"],
-                stderr=subprocess.DEVNULL, timeout=5
-            ).decode().strip()
+            _remote = (
+                subprocess.check_output(
+                    ["git", "-C", _source_dir, "remote", "get-url", "origin"],
+                    stderr=subprocess.DEVNULL,
+                    timeout=5,
+                )
+                .decode()
+                .strip()
+            )
             # Extract repo name from URL (e.g. ".../aws_prod_data.git" → "aws_prod_data")
             _repo = os.path.basename(_remote).removesuffix(".git")
             if _repo:
@@ -343,6 +369,7 @@ def render_drawio(tfdata, outfile, source, layout):
     # Extract AWS account ID from plan data for account label
     _account_id = None
     plandata = tfdata.get("plandata", {})
+
     def _find_account_id(obj):
         if isinstance(obj, dict):
             if "account_id" in obj and isinstance(obj["account_id"], str):
@@ -357,6 +384,7 @@ def render_drawio(tfdata, outfile, source, layout):
                 if result:
                     return result
         return None
+
     _account_id = _find_account_id(plandata)
 
     def _build_label(resource_key, is_group=False):
@@ -444,7 +472,10 @@ def render_drawio(tfdata, outfile, source, layout):
     try:
         import yaml
         from pathlib import Path
-        _default_filter = Path(__file__).resolve().parent.parent / "filters" / "default.yaml"
+
+        _default_filter = (
+            Path(__file__).resolve().parent.parent / "filters" / "default.yaml"
+        )
         if _default_filter.exists():
             with open(_default_filter) as _f:
                 _filter_data = yaml.safe_load(_f)
@@ -466,6 +497,7 @@ def render_drawio(tfdata, outfile, source, layout):
         if not current_vpc_identities or not vpc_all_names:
             return False
         import re
+
         bracket_contents = re.findall(r'\["?([^"\]]+)"?\]', resource_key)
         for content in bracket_contents:
             # Check if bracket content matches a known VPC identity that isn't ours
@@ -557,11 +589,18 @@ def render_drawio(tfdata, outfile, source, layout):
             # tables are allowed to appear in multiple subnets.
             if child_type == "aws_route_table_association":
                 container_vpc_prefix = _get_module_prefix(resource_key)
-                rt_key = _resolve_route_table(child_key, preferred_vpc_prefix=container_vpc_prefix)
+                rt_key = _resolve_route_table(
+                    child_key, preferred_vpc_prefix=container_vpc_prefix
+                )
                 if rt_key and rt_key not in seen_rt_in_subnet:
                     # Only promote if the route table belongs to the same VPC scope
                     rt_prefix = _get_module_prefix(rt_key)
-                    if not rt_prefix or not container_vpc_prefix or rt_prefix == container_vpc_prefix or rt_prefix not in vpc_module_prefixes:
+                    if (
+                        not rt_prefix
+                        or not container_vpc_prefix
+                        or rt_prefix == container_vpc_prefix
+                        or rt_prefix not in vpc_module_prefixes
+                    ):
                         rlabel = _build_label(rt_key, is_group=False)
                         node.resources.append((rt_key, "aws_route_table", rlabel))
                         seen_rt_in_subnet.add(rt_key)
@@ -571,7 +610,10 @@ def render_drawio(tfdata, outfile, source, layout):
             # (e.g. TGW attachments span all subnets in a VPC) should not
             # be blocked by the assigned_resources de-duplication.
             _ALLOW_MULTI_SUBNET = {"aws_ec2_transit_gateway_vpc_attachment"}
-            if child_key in assigned_resources and child_type not in _ALLOW_MULTI_SUBNET:
+            if (
+                child_key in assigned_resources
+                and child_type not in _ALLOW_MULTI_SUBNET
+            ):
                 continue
             if child_key in descendant_keys:
                 continue
@@ -582,7 +624,10 @@ def render_drawio(tfdata, outfile, source, layout):
 
             # --- At VPC level, skip route tables (promoted into subnets) and
             # IGW (positioned as edge resource straddling VPC border) ---
-            if resource_type == "aws_vpc" and child_type in ("aws_route_table", "aws_internet_gateway"):
+            if resource_type == "aws_vpc" and child_type in (
+                "aws_route_table",
+                "aws_internet_gateway",
+            ):
                 continue
 
             # --- Cross-VPC filter ---
@@ -627,12 +672,14 @@ def render_drawio(tfdata, outfile, source, layout):
         # Sort: regular resources first, then route tables, then networkmanager
         # (networkmanager renders in a separate horizontal row at the bottom)
         if node.resources:
+
             def _resource_sort_key(r):
                 if r[1].startswith("aws_networkmanager_"):
                     return 2
                 if r[1] == "aws_route_table":
                     return 1
                 return 0
+
             node.resources.sort(key=_resource_sort_key)
 
         return node
@@ -693,8 +740,11 @@ def render_drawio(tfdata, outfile, source, layout):
                     subnet_node.resources.append(rt)
                     # Re-sort to keep route tables last
                     subnet_node.resources.sort(
-                        key=lambda r: (2 if r[1].startswith("aws_networkmanager_") else
-                                       1 if r[1] == "aws_route_table" else 0)
+                        key=lambda r: (
+                            2
+                            if r[1].startswith("aws_networkmanager_")
+                            else 1 if r[1] == "aws_route_table" else 0
+                        )
                     )
 
         for child in node.children:
@@ -707,11 +757,19 @@ def render_drawio(tfdata, outfile, source, layout):
     edge_resources = []
     for resource_key in graphdict:
         rtype = _safe_resource_type(resource_key)
-        if rtype in OUTER_NODES and resource_key not in built_nodes and resource_key not in assigned_resources:
+        if (
+            rtype in OUTER_NODES
+            and resource_key not in built_nodes
+            and resource_key not in assigned_resources
+        ):
             rlabel = _build_label(resource_key, is_group=False)
             outer_resources.append((resource_key, rtype, rlabel))
             built_nodes[resource_key] = LayoutNode(resource_key, rtype, rlabel)
-        elif any(rtype.startswith(e) for e in EDGE_NODES) and resource_key not in built_nodes and resource_key not in assigned_resources:
+        elif (
+            any(rtype.startswith(e) for e in EDGE_NODES)
+            and resource_key not in built_nodes
+            and resource_key not in assigned_resources
+        ):
             rlabel = _build_label(resource_key, is_group=False)
             edge_resources.append((resource_key, rtype, rlabel))
             built_nodes[resource_key] = LayoutNode(resource_key, rtype, rlabel)
@@ -791,7 +849,7 @@ def render_drawio(tfdata, outfile, source, layout):
         name = resource_type
         # Try to strip the parent type prefix (e.g. "aws_s3_bucket_" from "aws_s3_bucket_policy")
         if parent_type and name.startswith(parent_type + "_"):
-            name = name[len(parent_type) + 1:]
+            name = name[len(parent_type) + 1 :]
         else:
             # Remove provider prefix (e.g. "aws_")
             parts = name.split("_")
@@ -827,7 +885,9 @@ def render_drawio(tfdata, outfile, source, layout):
             # Build property-list text
             lines = []
             for _, rtype, _ in node.resources:
-                lines.append(f"- {_short_type_name(rtype, parent_type=node.resource_type)}")
+                lines.append(
+                    f"- {_short_type_name(rtype, parent_type=node.resource_type)}"
+                )
             node.service_group_text = "<br>".join(lines)
             # Size based on child count (matching gold standard)
             if n_children <= 4:
@@ -843,7 +903,9 @@ def render_drawio(tfdata, outfile, source, layout):
             return
 
         # Compute resource footprints, splitting networkmanager into separate row
-        regular_res = [r for r in node.resources if not r[1].startswith("aws_networkmanager_")]
+        regular_res = [
+            r for r in node.resources if not r[1].startswith("aws_networkmanager_")
+        ]
         nm_res = [r for r in node.resources if r[1].startswith("aws_networkmanager_")]
 
         rtype = node.resource_type
@@ -920,10 +982,14 @@ def render_drawio(tfdata, outfile, source, layout):
         res_block_h = 0
         available_w = children_w  # width already claimed by child containers
         if regular_res and reg_cell_w > 0:
-            per_row = max(
-                MIN_RESOURCES_PER_ROW,
-                int((available_w + RESOURCE_GAP) // (reg_cell_w + RESOURCE_GAP)),
-            ) if available_w > 0 else MIN_RESOURCES_PER_ROW
+            per_row = (
+                max(
+                    MIN_RESOURCES_PER_ROW,
+                    int((available_w + RESOURCE_GAP) // (reg_cell_w + RESOURCE_GAP)),
+                )
+                if available_w > 0
+                else MIN_RESOURCES_PER_ROW
+            )
             per_row = min(per_row, len(regular_res))  # no more cols than items
             reg_rows = (len(regular_res) + per_row - 1) // per_row
             reg_cols = min(len(regular_res), per_row)
@@ -1017,9 +1083,11 @@ def render_drawio(tfdata, outfile, source, layout):
             if sg_children:
                 sg_top = CONTAINER_PAD_TOP
                 if infra_children:
-                    sg_top = CONTAINER_PAD_TOP + max(
-                        (c.h for c in infra_children), default=0
-                    ) + VPC_SPACING
+                    sg_top = (
+                        CONTAINER_PAD_TOP
+                        + max((c.h for c in infra_children), default=0)
+                        + VPC_SPACING
+                    )
                 sg_cx = CONTAINER_PAD_SIDE
                 sg_cy = sg_top
                 cols = SERVICE_GROUP_COLUMNS
@@ -1029,7 +1097,7 @@ def render_drawio(tfdata, outfile, source, layout):
                     if i > 0 and col == 0:
                         # New row: advance y by max height of previous row
                         prev_row_start = (i // cols - 1) * cols
-                        prev_row = sg_children[prev_row_start:prev_row_start + cols]
+                        prev_row = sg_children[prev_row_start : prev_row_start + cols]
                         sg_cy += max(c.h for c in prev_row) + SERVICE_GROUP_COL_GAP
                     sx = CONTAINER_PAD_SIDE + col * col_w
                     _assign_positions(child, sx, sg_cy)
@@ -1045,16 +1113,23 @@ def render_drawio(tfdata, outfile, source, layout):
             # Center TGW resources horizontally within the region container
             if rtype == "tv_aws_region":
                 tgw_positions = [
-                    (i, rp) for i, rp in enumerate(node.resource_positions)
+                    (i, rp)
+                    for i, rp in enumerate(node.resource_positions)
                     if rp[1].startswith("aws_ec2_transit_gateway")
                 ]
                 if tgw_positions:
-                    tgw_fps = [_estimate_label_footprint(rp[2]) for _, rp in tgw_positions]
-                    total_w = sum(fw for fw, _ in tgw_fps) + (len(tgw_fps) - 1) * RESOURCE_GAP
+                    tgw_fps = [
+                        _estimate_label_footprint(rp[2]) for _, rp in tgw_positions
+                    ]
+                    total_w = (
+                        sum(fw for fw, _ in tgw_fps) + (len(tgw_fps) - 1) * RESOURCE_GAP
+                    )
                     start_x = (node.w - total_w) / 2
                     for j, (idx, (rkey, rt, rl, rx, ry)) in enumerate(tgw_positions):
                         fw, _ = tgw_fps[j]
-                        new_rx = start_x + sum(tgw_fps[k][0] + RESOURCE_GAP for k in range(j))
+                        new_rx = start_x + sum(
+                            tgw_fps[k][0] + RESOURCE_GAP for k in range(j)
+                        )
                         new_rx += (fw - ICON_W) / 2  # center icon in footprint
                         node.resource_positions[idx] = (rkey, rt, rl, new_rx, ry)
 
@@ -1071,10 +1146,16 @@ def render_drawio(tfdata, outfile, source, layout):
             return
 
         # Split into regular resources and networkmanager resources
-        regular = [(r, _estimate_label_footprint(r[2])) for r in node.resources
-                    if not r[1].startswith("aws_networkmanager_")]
-        nm_res = [(r, _estimate_label_footprint(r[2])) for r in node.resources
-                   if r[1].startswith("aws_networkmanager_")]
+        regular = [
+            (r, _estimate_label_footprint(r[2]))
+            for r in node.resources
+            if not r[1].startswith("aws_networkmanager_")
+        ]
+        nm_res = [
+            (r, _estimate_label_footprint(r[2]))
+            for r in node.resources
+            if r[1].startswith("aws_networkmanager_")
+        ]
 
         # Place regular resources in the standard grid
         cur_y = base_y
@@ -1128,6 +1209,7 @@ def render_drawio(tfdata, outfile, source, layout):
 
     def _absolute_position(target_node):
         """Compute absolute (page-level) x, y of a node by walking from root."""
+
         def _walk(node, ax, ay):
             ax += node.x
             ay += node.y
@@ -1138,6 +1220,7 @@ def render_drawio(tfdata, outfile, source, layout):
                 if result:
                     return result
             return None
+
         result = _walk(root, 0, 0)
         return result if result else (target_node.x, target_node.y)
 
@@ -1161,7 +1244,9 @@ def render_drawio(tfdata, outfile, source, layout):
                     "fontStyle=0;fontColor=#5A6C86;whiteSpace=wrap;html=1;"
                     "container=1;collapsible=0;recursiveResize=0;rounded=1;"
                 )
-            container_action = tfdata["meta_data"].get(node.key, {}).get("_change_action", "no-op")
+            container_action = (
+                tfdata["meta_data"].get(node.key, {}).get("_change_action", "no-op")
+            )
             style = apply_change_highlight(style, container_action)
 
             # Empty label on the container
@@ -1175,18 +1260,26 @@ def render_drawio(tfdata, outfile, source, layout):
             icon_style = apply_change_highlight(icon_style, container_action)
             icon_label = _build_label(node.key, is_group=False)
             rid = doc.add_resource(
-                node.cell_id, icon_label, icon_style,
-                SERVICE_GROUP_ICON_X, SERVICE_GROUP_ICON_Y, ICON_W, ICON_H
+                node.cell_id,
+                icon_label,
+                icon_style,
+                SERVICE_GROUP_ICON_X,
+                SERVICE_GROUP_ICON_Y,
+                ICON_W,
+                ICON_H,
             )
             resource_cell_ids[node.key + "::icon"] = rid
 
             # Property-list text cell on the right
             text_h = node.h - 40
             doc.add_styled_text(
-                node.cell_id, node.service_group_text,
+                node.cell_id,
+                node.service_group_text,
                 SERVICE_GROUP_TEXT_STYLE,
-                SERVICE_GROUP_TEXT_X, SERVICE_GROUP_TEXT_Y,
-                195, text_h
+                SERVICE_GROUP_TEXT_X,
+                SERVICE_GROUP_TEXT_Y,
+                195,
+                text_h,
             )
             return
 
@@ -1199,7 +1292,9 @@ def render_drawio(tfdata, outfile, source, layout):
             )
 
         # Apply change highlighting to container
-        container_action = tfdata["meta_data"].get(node.key, {}).get("_change_action", "no-op")
+        container_action = (
+            tfdata["meta_data"].get(node.key, {}).get("_change_action", "no-op")
+        )
         style = apply_change_highlight(style, container_action)
 
         node.cell_id = doc.add_container(
@@ -1216,9 +1311,7 @@ def render_drawio(tfdata, outfile, source, layout):
             rstyle = get_resource_style(rtype)
             action = tfdata["meta_data"].get(rkey, {}).get("_change_action", "no-op")
             rstyle = apply_change_highlight(rstyle, action)
-            rid = doc.add_resource(
-                node.cell_id, rlabel, rstyle, rx, ry, ICON_W, ICON_H
-            )
+            rid = doc.add_resource(node.cell_id, rlabel, rstyle, rx, ry, ICON_W, ICON_H)
             resource_cell_ids[rkey] = rid
 
     _emit_node(root)
@@ -1236,9 +1329,13 @@ def render_drawio(tfdata, outfile, source, layout):
             # Center above the account container
             internet_x = root.x + root.w / 2 - ICON_W / 2
             internet_y = root.y - fh - 20
-            rid = doc.add_resource("1", rlabel, rstyle, internet_x, internet_y, ICON_W, ICON_H)
+            rid = doc.add_resource(
+                "1", rlabel, rstyle, internet_x, internet_y, ICON_W, ICON_H
+            )
         else:
-            rid = doc.add_resource("1", rlabel, rstyle, outer_x - fw - 30, outer_y, ICON_W, ICON_H)
+            rid = doc.add_resource(
+                "1", rlabel, rstyle, outer_x - fw - 30, outer_y, ICON_W, ICON_H
+            )
             outer_y += fh + 20
         resource_cell_ids[rkey] = rid
 
@@ -1277,9 +1374,13 @@ def render_drawio(tfdata, outfile, source, layout):
                 abs_x, abs_y = _absolute_position(vpc_node)
                 igw_x = abs_x + vpc_node.w / 2 - ICON_W / 2
                 igw_y = abs_y - ICON_H / 2
-                rid = doc.add_resource("1", rlabel, rstyle, igw_x, igw_y, ICON_W, ICON_H)
+                rid = doc.add_resource(
+                    "1", rlabel, rstyle, igw_x, igw_y, ICON_W, ICON_H
+                )
             else:
-                rid = doc.add_resource("1", rlabel, rstyle, edge_x, edge_y, ICON_W, ICON_H)
+                rid = doc.add_resource(
+                    "1", rlabel, rstyle, edge_x, edge_y, ICON_W, ICON_H
+                )
                 edge_x += ICON_W + RESOURCE_GAP + 20
         else:
             rid = doc.add_resource("1", rlabel, rstyle, edge_x, edge_y, ICON_W, ICON_H)
@@ -1327,6 +1428,10 @@ def render_drawio(tfdata, outfile, source, layout):
     output_path = f"{outfile}.drawio"
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(xml_content)
-    click.echo(click.style(f"\nRendering Draw.io Architecture Diagram...", fg="white", bold=True))
+    click.echo(
+        click.style(
+            f"\nRendering Draw.io Architecture Diagram...", fg="white", bold=True
+        )
+    )
     click.echo(f"  Output file: {output_path}")
     click.echo(f"  Completed!")

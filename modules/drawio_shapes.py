@@ -17,20 +17,17 @@ CONTAINER_BASE = (
 
 GROUP_STYLES = {
     "aws_account": (
-        CONTAINER_BASE
-        + "shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_account;"
+        CONTAINER_BASE + "shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_account;"
         "strokeColor=#CD2264;fillColor=none;verticalAlign=top;align=left;"
         "spacingLeft=30;fontColor=#CD2264;dashed=0;"
     ),
     "tv_aws_region": (
-        CONTAINER_BASE
-        + "shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_region;"
+        CONTAINER_BASE + "shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_region;"
         "strokeColor=#00A4A6;fillColor=none;verticalAlign=top;align=left;"
         "spacingLeft=30;fontColor=#147EBA;dashed=1;"
     ),
     "aws_vpc": (
-        CONTAINER_BASE
-        + "shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_vpc;"
+        CONTAINER_BASE + "shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_vpc;"
         "strokeColor=#248814;fillColor=none;verticalAlign=top;align=left;"
         "spacingLeft=30;fontColor=#AAB7B8;dashed=0;"
     ),
@@ -889,10 +886,10 @@ def get_resource_style(resource_type):
 # =============================================================================
 
 CHANGE_HIGHLIGHT = {
-    "create": "strokeColor=#00CC00;strokeWidth=3;",   # green border
-    "delete": "strokeColor=#FF0000;strokeWidth=3;",   # red border
-    "update": "strokeColor=#FF9900;strokeWidth=3;",   # orange border
-    "no-op":  "",                                       # unchanged
+    "create": "strokeColor=#00CC00;strokeWidth=3;",  # green border
+    "delete": "strokeColor=#FF0000;strokeWidth=3;",  # red border
+    "update": "strokeColor=#FF9900;strokeWidth=3;",  # orange border
+    "no-op": "",  # unchanged
 }
 
 
@@ -913,6 +910,9 @@ def apply_change_highlight(base_style: str, action: str) -> str:
     if not suffix:
         return base_style
     # Remove any existing strokeColor/strokeWidth so ours wins
-    parts = [p for p in base_style.rstrip(";").split(";")
-             if not p.startswith("strokeColor=") and not p.startswith("strokeWidth=")]
+    parts = [
+        p
+        for p in base_style.rstrip(";").split(";")
+        if not p.startswith("strokeColor=") and not p.startswith("strokeWidth=")
+    ]
     return ";".join(parts) + ";" + suffix
