@@ -48,21 +48,25 @@ class TestValidatePlanfile:
         with pytest.raises(SystemExit):
             validate_planfile(str(binary_file))
 
-    def test_missing_resource_changes(self, tmp_path):
-        """JSON without resource_changes key should cause SystemExit."""
+    def test_missing_resource_changes(self, tmp_path, capsys):
+        """JSON without resource_changes key should warn and set empty list."""
         bad_plan = tmp_path / "no-resources.json"
         bad_plan.write_text(json.dumps({"format_version": "1.0"}))
-        with pytest.raises(SystemExit):
-            validate_planfile(str(bad_plan))
+        result = validate_planfile(str(bad_plan))
+        captured = capsys.readouterr()
+        assert "WARNING" in captured.out
+        assert result["resource_changes"] == []
 
-    def test_empty_resource_changes(self, tmp_path):
-        """JSON with empty resource_changes should cause SystemExit."""
+    def test_empty_resource_changes(self, tmp_path, capsys):
+        """JSON with empty resource_changes should warn for state-only fallback."""
         empty_plan = tmp_path / "empty.json"
         empty_plan.write_text(
             json.dumps({"format_version": "1.0", "resource_changes": []})
         )
-        with pytest.raises(SystemExit):
-            validate_planfile(str(empty_plan))
+        result = validate_planfile(str(empty_plan))
+        captured = capsys.readouterr()
+        assert "WARNING" in captured.out
+        assert result["resource_changes"] == []
 
     def test_unrecognized_format_version_warns(self, tmp_path, capsys):
         """Unrecognized format version should warn but not fail."""

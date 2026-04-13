@@ -6,6 +6,7 @@ from the GitHub repository to ensure end-to-end functionality.
 
 import os
 import subprocess
+import sys
 import platform
 import json
 import pytest
@@ -63,11 +64,8 @@ def run_terravision(
     Returns:
         CompletedProcess object with stdout, stderr, and returncode
     """
-    # Windows requires explicit Python invocation via Poetry and full path
-    if WINDOWS:
-        cmd = ["poetry", "run", "python", str(PARENT_DIR / "terravision.py")] + args
-    else:
-        cmd = [str(PARENT_DIR / "terravision/terravision.py")] + args
+    # Use the current Python interpreter (venv-aware) to run terravision
+    cmd = [sys.executable, str(PARENT_DIR / "terravision/terravision.py")] + args
 
     env = None
     if extra_env:

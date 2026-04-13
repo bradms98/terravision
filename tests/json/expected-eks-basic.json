@@ -12,7 +12,7 @@
   ],
   "aws_cloudwatch_log_group.cloudwatch": [],
   "aws_ecr_repository.ecr": [],
-  "aws_eip.elastic_ip": [
+  "aws_eip.nat": [
     "aws_nat_gateway.main"
   ],
   "aws_eks_cluster.main": [
@@ -53,8 +53,6 @@
   ],
   "aws_group.shared_services": [
     "aws_cloudwatch_log_group.cloudwatch",
-    "aws_ecr_repository.ecr",
-    "aws_eip.elastic_ip",
     "aws_iam_group.of_services"
   ],
   "aws_iam_role.eks_cluster": [
@@ -84,7 +82,7 @@
     "tv_aws_internet.internet"
   ],
   "aws_nat_gateway.main": [
-    "aws_eip.elastic_ip",
+    "aws_eip.nat",
     "aws_internet_gateway.igw",
     "aws_route_table.private"
   ],

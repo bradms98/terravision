@@ -11,16 +11,11 @@
     "module.private-vpc.aws_subnet.private_subnets[2]~3",
     "module.private-vpc.aws_subnet.public_subnets[2]~3"
   ],
-  "aws_eip.elastic_ip": [
-    "aws_internet_gateway.igw",
-    "module.private-vpc.aws_nat_gateway.nat_gw"
-  ],
   "aws_group.shared_services": [
-    "aws_eip.elastic_ip",
     "aws_iam_group.of_services"
   ],
   "aws_internet_gateway.igw": [
-    "aws_eip.elastic_ip",
+    "module.private-vpc.aws_eip.nat_eip",
     "module.private-vpc.aws_route.public_internet_gateway",
     "tv_aws_internet.internet"
   ],
@@ -35,19 +30,23 @@
   ],
   "module.ec2-instance.aws_iam_role_policy_attachment.attach_ssm_policy": [],
   "module.ec2-instance.aws_instance.ec2_instance": [],
-  "module.private-vpc.aws_nat_gateway.nat_gw~1": [
-    "aws_eip.elastic_ip",
+  "module.private-vpc.aws_eip.nat_eip": [
     "aws_internet_gateway.igw",
+    "module.private-vpc.aws_nat_gateway.nat_gw"
+  ],
+  "module.private-vpc.aws_nat_gateway.nat_gw~1": [
+    "aws_internet_gateway.igw",
+    "module.private-vpc.aws_eip.nat_eip",
     "module.private-vpc.aws_route.private_nat_gateway"
   ],
   "module.private-vpc.aws_nat_gateway.nat_gw~2": [
-    "aws_eip.elastic_ip",
     "aws_internet_gateway.igw",
+    "module.private-vpc.aws_eip.nat_eip",
     "module.private-vpc.aws_route.private_nat_gateway"
   ],
   "module.private-vpc.aws_nat_gateway.nat_gw~3": [
-    "aws_eip.elastic_ip",
     "aws_internet_gateway.igw",
+    "module.private-vpc.aws_eip.nat_eip",
     "module.private-vpc.aws_route.private_nat_gateway"
   ],
   "module.private-vpc.aws_route.private_nat_gateway": [
@@ -84,6 +83,9 @@
   "module.private-vpc.aws_route_table_association.public[2]~3": [
     "module.private-vpc.aws_route_table.vpc_public_rt"
   ],
+  "module.private-vpc.aws_security_group.allow-strict": [
+    "module.private-vpc.aws_security_group_rule.ingress_ssh[0]~1"
+  ],
   "module.private-vpc.aws_security_group.allow-strict_bastion_host": [
     "module.bastion-host.aws_instance.bastion_host"
   ],
@@ -92,8 +94,8 @@
   ],
   "module.private-vpc.aws_security_group_rule.ingress_ssh[0]~1": [],
   "module.private-vpc.aws_subnet.private_subnets[0]~1": [
-    "module.private-vpc.aws_route_table_association.private[0]~1",
-    "module.private-vpc.aws_security_group.allow-strict_ec2_instance"
+    "module.ec2-instance.aws_instance.ec2_instance",
+    "module.private-vpc.aws_route_table_association.private[0]~1"
   ],
   "module.private-vpc.aws_subnet.private_subnets[1]~2": [
     "module.private-vpc.aws_route_table_association.private[1]~2"
@@ -102,9 +104,9 @@
     "module.private-vpc.aws_route_table_association.private[2]~3"
   ],
   "module.private-vpc.aws_subnet.public_subnets[0]~1": [
+    "module.bastion-host.aws_instance.bastion_host",
     "module.private-vpc.aws_nat_gateway.nat_gw~1",
-    "module.private-vpc.aws_route_table_association.public[0]~1",
-    "module.private-vpc.aws_security_group.allow-strict_bastion_host"
+    "module.private-vpc.aws_route_table_association.public[0]~1"
   ],
   "module.private-vpc.aws_subnet.public_subnets[1]~2": [
     "module.private-vpc.aws_nat_gateway.nat_gw~2",
