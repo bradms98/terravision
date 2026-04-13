@@ -654,11 +654,26 @@ def create_vm_zone_containers(tfdata: Dict[str, Any]) -> Dict[str, Any]:
                     # Remove ${} and tostring() wrappers
                     zone = zone.replace("${", "").replace("}", "")
                     zone = zone.replace("tostring(", "").replace(")", "")
-                    # Evaluate the expression
+                    # Safely evaluate simple integer arithmetic (e.g. "0 + 1")
                     try:
-                        zone = str(eval(zone))
+                        match = re.fullmatch(r"\s*(\d+)\s*([+\-*/])\s*(\d+)\s*", zone)
+                        if match:
+                            a, op, b = (
+                                int(match.group(1)),
+                                match.group(2),
+                                int(match.group(3)),
+                            )
+                            if op == "+":
+                                zone = str(a + b)
+                            elif op == "-":
+                                zone = str(a - b)
+                            elif op == "*":
+                                zone = str(a * b)
+                            elif op == "/" and b != 0:
+                                zone = str(a // b)
+                        elif zone.strip().isdigit():
+                            zone = zone.strip()
                     except Exception:
-                        # If evaluation fails, keep original
                         pass
 
                 if zone not in zones_used:
