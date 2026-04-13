@@ -503,7 +503,9 @@ def handle_group(
     # Empty subnets/groups cause layout issues where they get huge bounding boxes
     # In grid mode, keep empty subnet groups so they render as stacked containers in AZs
     is_subnet = resource_type == "aws_subnet"
-    if not tfdata["graphdict"].get(resource) and not (is_subnet and get_layout_mode() == "grid"):
+    if not tfdata["graphdict"].get(resource) and not (
+        is_subnet and get_layout_mode() == "grid"
+    ):
         return None, drawn_resources
 
     # Create new group/cluster
@@ -542,7 +544,11 @@ def handle_group(
                 if subGroup is not None:
                     # In grid mode, add invisible placeholder inside each subnet
                     # so we can chain them with edges to force vertical stacking
-                    if get_layout_mode() == "grid" and is_az and node_type == "aws_subnet":
+                    if (
+                        get_layout_mode() == "grid"
+                        and is_az
+                        and node_type == "aws_subnet"
+                    ):
                         placeholder_id = f"_ph_{subGroup.dot.name}"
                         subGroup.dot.node(
                             placeholder_id,
@@ -575,9 +581,7 @@ def handle_group(
                 )
                 if newNode is not None:
                     # Don't overwrite HTML labels (GCP nodes have custom HTML tables)
-                    node_label = newNode._attrs.get(
-                        "label", newNode.label
-                    )
+                    node_label = newNode._attrs.get("label", newNode.label)
                     newGroup.add_node(newNode._id, label=node_label)
 
     # Chain subnet placeholders with invisible edges to force vertical stacking
@@ -681,8 +685,12 @@ def _deduplicate_az_subnets(tfdata: Dict[str, Any]) -> None:
     for resource, children in list(graphdict.items()):
         resource_type = helpers.get_no_module_name(resource).split(".")[0]
         if resource_type == "aws_vpc" and isinstance(children, list):
-            az_children = [c for c in children
-                           if helpers.get_no_module_name(c).split(".")[0] in ("aws_az", "tv_aws_az")]
+            az_children = [
+                c
+                for c in children
+                if helpers.get_no_module_name(c).split(".")[0]
+                in ("aws_az", "tv_aws_az")
+            ]
             if az_children:
                 vpcs[resource] = az_children
 
@@ -854,6 +862,7 @@ def render_diagram(
     # Native draw.io renderer — bypass Graphviz entirely
     if format == "drawio":
         from modules.drawio_renderer import render_drawio
+
         render_drawio(tfdata, outfile, source, layout)
         return
 
@@ -1064,13 +1073,16 @@ def render_diagram(
         # Skip gvpr post-processing — just rename the pre-render DOT as the post-DOT
         path_to_postdot = Path.cwd() / f"{outfile}.dot"
         import shutil
+
         shutil.copy(str(path_to_predot), str(path_to_postdot))
     else:
         # Apply label positioning script (neato mode)
         bundle_dir = Path(__file__).parent.parent
         path_to_script = Path.cwd() / bundle_dir / "shiftLabel.gvpr"
         path_to_postdot = Path.cwd() / f"{outfile}.dot"
-        os.system(f"gvpr -c -q -f {path_to_script} {path_to_predot} -o {path_to_postdot}")
+        os.system(
+            f"gvpr -c -q -f {path_to_script} {path_to_predot} -o {path_to_postdot}"
+        )
 
     # Generate final output file using graphviz
     click.echo(f"  Output file: {myDiagram.render()}")

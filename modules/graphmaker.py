@@ -1335,9 +1335,9 @@ def infer_relationships_from_metadata(tfdata: Dict[str, Any]) -> Dict[str, Any]:
     meta_data = tfdata.get("meta_data", {})
 
     # Build reverse lookup indexes
-    id_index = {}    # resource_id -> graphdict_key
-    arn_index = {}   # resource_arn -> graphdict_key
-    field_index = {} # (type_prefix, field, value) -> graphdict_key
+    id_index = {}  # resource_id -> graphdict_key
+    arn_index = {}  # resource_arn -> graphdict_key
+    field_index = {}  # (type_prefix, field, value) -> graphdict_key
 
     for key in graphdict:
         meta = meta_data.get(key, {})
@@ -1389,7 +1389,9 @@ def infer_relationships_from_metadata(tfdata: Dict[str, Any]) -> Dict[str, Any]:
 
                 # Verify target type matches expected prefix
                 target_type = _strip_type_prefix(target_key).split(".")[0] + "."
-                if not target_type.startswith(target_type_prefix.rstrip(".").split(".")[0]):
+                if not target_type.startswith(
+                    target_type_prefix.rstrip(".").split(".")[0]
+                ):
                     continue
 
                 # Add edge based on relationship type
@@ -2298,7 +2300,8 @@ def group_s3_bucket_resources(tfdata: Dict[str, Any]) -> Dict[str, Any]:
 
     # Find all S3 bucket nodes
     bucket_nodes = [
-        k for k in graphdict
+        k
+        for k in graphdict
         if helpers.get_no_module_name(k).startswith("aws_s3_bucket.")
         and helpers.get_no_module_name(k).split(".")[0] == "aws_s3_bucket"
     ]
@@ -2378,12 +2381,14 @@ def group_s3_bucket_resources(tfdata: Dict[str, Any]) -> Dict[str, Any]:
                 if ancillary_module == bnode_module:
                     # If only one bucket in this module, use it
                     module_buckets = [
-                        b for b in bucket_nodes
+                        b
+                        for b in bucket_nodes
                         if (
                             ".".join(b.split(".")[:2]) + "."
                             if b.startswith("module.")
                             else ""
-                        ) == ancillary_module
+                        )
+                        == ancillary_module
                     ]
                     if len(module_buckets) == 1:
                         parent_bucket = module_buckets[0]
@@ -2441,7 +2446,8 @@ def group_backup_vault_resources(tfdata: Dict[str, Any]) -> Dict[str, Any]:
 
     # Find all Backup vault nodes
     vault_nodes = [
-        k for k in graphdict
+        k
+        for k in graphdict
         if helpers.get_no_module_name(k).startswith("aws_backup_vault.")
         and helpers.get_no_module_name(k).split(".")[0] == "aws_backup_vault"
     ]
@@ -2518,7 +2524,9 @@ def group_backup_vault_resources(tfdata: Dict[str, Any]) -> Dict[str, Any]:
                 if ancillary_module == vnode_module:
                     # Match by name: ancillary name often matches vault name
                     # e.g. aws_backup_vault_policy.prod_daily -> aws_backup_vault.prod_daily
-                    ancillary_name = helpers.get_no_module_name(ancillary).split(".", 1)[-1]
+                    ancillary_name = helpers.get_no_module_name(ancillary).split(
+                        ".", 1
+                    )[-1]
                     vault_name = helpers.get_no_module_name(vnode).split(".", 1)[-1]
                     if ancillary_name == vault_name:
                         parent_vault = vnode
@@ -2527,12 +2535,14 @@ def group_backup_vault_resources(tfdata: Dict[str, Any]) -> Dict[str, Any]:
             # If name matching didn't work, try single-vault-in-module fallback
             if not parent_vault and ancillary_module:
                 module_vaults = [
-                    v for v in vault_nodes
+                    v
+                    for v in vault_nodes
                     if (
                         ".".join(v.split(".")[:2]) + "."
                         if v.startswith("module.")
                         else ""
-                    ) == ancillary_module
+                    )
+                    == ancillary_module
                 ]
                 if len(module_vaults) == 1:
                     parent_vault = module_vaults[0]
@@ -2625,7 +2635,10 @@ def scope_subnet_id_resources(tfdata: Dict[str, Any]) -> Dict[str, Any]:
         correct_vpcs = set()
         for sn in correct_subnets:
             for vpc_node, vpc_children in tfdata["graphdict"].items():
-                if helpers.get_no_module_name(vpc_node).startswith("aws_vpc.") and sn in vpc_children:
+                if (
+                    helpers.get_no_module_name(vpc_node).startswith("aws_vpc.")
+                    and sn in vpc_children
+                ):
                     correct_vpcs.add(vpc_node)
 
         # Remove this resource from subnets and VPCs it doesn't belong to,
@@ -2640,8 +2653,11 @@ def scope_subnet_id_resources(tfdata: Dict[str, Any]) -> Dict[str, Any]:
                     children.remove(node)
 
         # Fix VPC-level edges too
-        vpcs = [k for k in tfdata["graphdict"]
-                if helpers.get_no_module_name(k).startswith("aws_vpc.")]
+        vpcs = [
+            k
+            for k in tfdata["graphdict"]
+            if helpers.get_no_module_name(k).startswith("aws_vpc.")
+        ]
         for vpc in vpcs:
             children = tfdata["graphdict"].get(vpc, [])
             if vpc in correct_vpcs:
@@ -2838,7 +2854,9 @@ def filter_graphdict(tfdata: Dict[str, Any], filter_name: str) -> None:
         if available:
             click.echo(f"Available filters: {', '.join(sorted(available))}")
         else:
-            click.echo("No filter files found. Create YAML files in a filters/ directory.")
+            click.echo(
+                "No filter files found. Create YAML files in a filters/ directory."
+            )
         return
 
     with open(filter_path, "r") as f:

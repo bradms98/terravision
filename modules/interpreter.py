@@ -388,7 +388,10 @@ def replace_var_values(
             module = "main"
         # Strip count/for_each index from module name (e.g. "test_server[0]" -> "test_server")
         module_key = re.sub(r"\[.*?\]", "", module)
-        if module_key not in tfdata["variable_map"] and module in tfdata["variable_map"]:
+        if (
+            module_key not in tfdata["variable_map"]
+            and module in tfdata["variable_map"]
+        ):
             module_key = module
         # Check if variable exists in current module and is resolved
         if (lookup in tfdata["variable_map"][module_key].keys()) and (

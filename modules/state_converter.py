@@ -101,7 +101,9 @@ def state_to_prior_state(state_data: Dict[str, Any]) -> Dict[str, Any]:
                     base_address += f'["{index_key}"]'
 
             entry = {
-                "address": base_address if not module_addr else f"{module_addr}.{base_address}",
+                "address": (
+                    base_address if not module_addr else f"{module_addr}.{base_address}"
+                ),
                 "mode": resource.get("mode", "managed"),
                 "type": resource["type"],
                 "name": resource["name"],
