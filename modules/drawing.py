@@ -9,6 +9,7 @@ import datetime
 import importlib
 import os
 import pkgutil
+import subprocess
 import sys
 from pathlib import Path
 from typing import Dict, List, Tuple, Any, Optional
@@ -1080,8 +1081,18 @@ def render_diagram(
         bundle_dir = Path(__file__).parent.parent
         path_to_script = Path.cwd() / bundle_dir / "shiftLabel.gvpr"
         path_to_postdot = Path.cwd() / f"{outfile}.dot"
-        os.system(
-            f"gvpr -c -q -f {path_to_script} {path_to_predot} -o {path_to_postdot}"
+        subprocess.run(
+            [
+                "gvpr",
+                "-c",
+                "-q",
+                "-f",
+                str(path_to_script),
+                str(path_to_predot),
+                "-o",
+                str(path_to_postdot),
+            ],
+            check=True,
         )
 
     # Generate final output file using graphviz
