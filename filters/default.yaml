@@ -1,9 +1,45 @@
-# Default Hidden Resource Types
-# These are too granular for architecture diagrams and are always excluded.
-# Route tables and associations are shown as attributes of subnets/VPCs,
-# not as standalone diagram elements.
+# Default Diagram Filter
+# Excludes noisy infrastructure plumbing: CloudWatch, IAM, Flow Logs,
+# SSM, KMS, routing tables, and RAM sharing resources.
 
 exclude:
+  # CloudWatch
+  - aws_cloudwatch_log_group
+  - aws_cloudwatch_log_stream
+  - aws_cloudwatch_metric_alarm
+  - aws_cloudwatch_event_rule
+  - aws_cloudwatch_event_target
+  - aws_cloudwatch_dashboard
+  # IAM
+  - aws_iam_role
+  - aws_iam_policy
+  - aws_iam_role_policy_attachment
+  - aws_iam_role_policy
+  - aws_iam_instance_profile
+  - aws_iam_group
+  - aws_iam_policy_attachment
+  - aws_iam_user
+  - aws_iam_access_key
+  # Flow Logs
+  - aws_flow_log
+  # SSM
+  - aws_ssm_document
+  - aws_ssm_parameter
+  - aws_ssm_association
+  - aws_ssm_maintenance_window
+  - aws_ssm_maintenance_window_target
+  - aws_ssm_maintenance_window_task
+  # Key Pairs
+  - aws_key_pair
+  # Secrets Manager
+  - aws_secretsmanager_secret
+  - aws_secretsmanager_secret_version
+  - aws_secretsmanager_secret_rotation
+  - aws_secretsmanager_secret_policy
+  # KMS
+  - aws_kms_key
+  - aws_kms_alias
+  - aws_kms_grant
   # Routing (shown as subnet/VPC attributes instead)
   - aws_route_table_association
   - aws_route

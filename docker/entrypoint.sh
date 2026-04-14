@@ -9,7 +9,7 @@ set -euo pipefail
 # OUTPUT_FORMAT    - drawio (default), png, or both
 # OUTPUT_PATH      - output directory (default: docs/architecture)
 # RUN_STATUS_FILTER - applied (post-apply) or planned (PR speculative)
-# DIAGRAM_FILTER   - terravision --filter value (default: network, set to "none" to disable)
+# DIAGRAM_FILTER   - terravision --filter value (default: default, set to "none" to disable)
 # GH_TOKEN         - GitHub token for cloning private modules (also accepts GITHUB_TOKEN or GIT_TOKEN)
 
 # Scalr CLI reads SCALR_TOKEN and SCALR_HOSTNAME from env vars directly
@@ -20,7 +20,7 @@ TF_SOURCE="${TF_SOURCE:-.}"
 OUTPUT_FORMAT="${OUTPUT_FORMAT:-drawio}"
 OUTPUT_PATH="${OUTPUT_PATH:-docs/architecture}"
 RUN_STATUS_FILTER="${RUN_STATUS_FILTER:-applied}"
-DIAGRAM_FILTER="${DIAGRAM_FILTER:-network}"
+DIAGRAM_FILTER="${DIAGRAM_FILTER:-default}"
 
 SOURCE_DIR="/workspace/source/${TF_SOURCE}"
 OUTPUT_DIR="/workspace/source/${OUTPUT_PATH}"

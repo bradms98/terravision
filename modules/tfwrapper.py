@@ -461,6 +461,11 @@ def find_node_in_gvid_table(node: str, gvid_table: List[str]) -> int:
     if nodename in gvid_table:
         return gvid_table.index(nodename)
 
+    # Try without brackets and also stripping ~N expansion suffix
+    nodename_no_tilde = nodename.split("~")[0]
+    if nodename_no_tilde in gvid_table:
+        return gvid_table.index(nodename_no_tilde)
+
     # Try base name without index suffix
     nodename = node.split("[")[0].split("~")[0]
     if nodename in gvid_table:
