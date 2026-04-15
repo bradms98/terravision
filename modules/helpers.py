@@ -1684,21 +1684,46 @@ def safe_remove_connection(
     return False
 
 
-def check_dependencies() -> None:
-    """Check if required command-line tools are available."""
-    dependencies = ["dot", "gvpr", "git", "terraform"]
+def check_dependencies(
+    output_format: Optional[str] = None, planfile: Optional[str] = None
+) -> None:
+    """Check if required command-line tools are available.
+
+    Dependencies are tailored to the run:
+    - ``git`` is always required (module downloads, etc.)
+    - ``dot``/``gvpr`` are only needed for graphviz-rendered formats
+      (png/svg/pdf/jpg/dot). The drawio renderer is pure Python.
+    - A Terraform-compatible binary (``terraform`` or ``tofu``) is only
+      required when we have to run ``terraform plan`` ourselves. When a
+      pre-generated ``--planfile`` is supplied we skip the binary entirely.
+    """
+    graphviz_formats = {"png", "svg", "pdf", "jpg", "jpeg", "dot"}
+    dependencies = ["git"]
+    if (output_format or "").lower() in graphviz_formats:
+        dependencies.extend(["dot", "gvpr"])
+    if not planfile:
+        dependencies.append(("terraform", "tofu"))
     bundle_dir = Path(__file__).parent
     import sys
 
     sys.path.append(str(bundle_dir))
-    for exe in dependencies:
-        location = shutil.which(exe) or os.path.isfile(exe)
+    for dep in dependencies:
+        candidates = (dep,) if isinstance(dep, str) else dep
+        location = next(
+            (
+                shutil.which(c) or (c if os.path.isfile(c) else None)
+                for c in candidates
+                if shutil.which(c) or os.path.isfile(c)
+            ),
+            None,
+        )
         if location:
-            click.echo(f"  {exe} command detected: {location}")
+            click.echo(f"  {candidates[0]} command detected: {location}")
         else:
+            label = " or ".join(candidates)
             click.echo(
                 click.style(
-                    f"\n  ERROR: {exe} command executable not detected in path. Please ensure you have installed all required dependencies first",
+                    f"\n  ERROR: {label} command executable not detected in path. Please ensure you have installed all required dependencies first",
                     fg="red",
                     bold=True,
                 )
@@ -1706,23 +1731,39 @@ def check_dependencies() -> None:
             exit()
 
 
-def check_terraform_version() -> None:
-    """Validate Terraform version is compatible."""
+def check_terraform_version(planfile: Optional[str] = None) -> None:
+    """Validate Terraform (or OpenTofu) version is compatible.
+
+    Skipped entirely when ``planfile`` is supplied — terravision doesn't
+    shell out to the IaC binary in that case.
+    """
+    if planfile:
+        return
+    binary = shutil.which("terraform") or shutil.which("tofu")
+    if not binary:
+        click.echo(
+            click.style(
+                "\n  ERROR: Neither terraform nor tofu found on PATH",
+                fg="red",
+                bold=True,
+            )
+        )
+        exit()
     try:
         result = subprocess.run(
-            ["terraform", "-v"], capture_output=True, text=True, check=True
+            [binary, "-v"], capture_output=True, text=True, check=True
         )
         version_output = result.stdout
 
         version_line = version_output.split("\n")[0]
-        print(f"  terraform version detected: {version_line}")
+        print(f"  {os.path.basename(binary)} version detected: {version_line}")
         tf_version = version_line.split(" ")[1].replace("v", "")
         version_major = tf_version.split(".")[0]
 
         if version_major != "1":
             click.echo(
                 click.style(
-                    f"\n  ERROR: Terraform Version '{tf_version}' is not supported. Please upgrade to >= v1.0.0",
+                    f"\n  ERROR: {os.path.basename(binary)} version '{tf_version}' is not supported. Please upgrade to >= v1.0.0",
                     fg="red",
                     bold=True,
                 )
@@ -1731,7 +1772,7 @@ def check_terraform_version() -> None:
     except (subprocess.CalledProcessError, IndexError, FileNotFoundError) as e:
         click.echo(
             click.style(
-                f"\n  ERROR: Failed to check Terraform version: {e}",
+                f"\n  ERROR: Failed to check {os.path.basename(binary)} version: {e}",
                 fg="red",
                 bold=True,
             )

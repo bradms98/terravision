@@ -149,12 +149,16 @@ def compile_tfdata(
                 )
                 sys.exit(1)
             tfdata = {
-                "codepath": os.path.abspath(source) if os.path.isdir(source) else source,
+                "codepath": (
+                    os.path.abspath(source) if os.path.isdir(source) else source
+                ),
                 "workdir": os.getcwd(),
                 "plandata": dict(plandata),
                 "tf_resources_created": synthetic_changes,
             }
-            tfdata["plandata"]["prior_state"] = state_converter.state_to_prior_state(state_data)
+            tfdata["plandata"]["prior_state"] = state_converter.state_to_prior_state(
+                state_data
+            )
             tfdata = tfwrapper.setup_tfdata(tfdata)
             tfdata = graphmaker.infer_relationships_from_metadata(tfdata)
             tfdata = tfwrapper.add_vpc_implied_relations(tfdata)
@@ -170,6 +174,7 @@ def compile_tfdata(
                 else tfdata["codepath"]
             )
             import modules.fileparser as fileparser
+
             try:
                 tfdata = fileparser.read_tfsource(codepath_list, [], annotate, tfdata)
             except SystemExit:
@@ -185,7 +190,11 @@ def compile_tfdata(
                 tfdata.setdefault("module_source_dict", {})
                 tfdata.setdefault("all_variable", {})
                 # Detect provider from graphdict keys so detect_providers() is skipped
-                from modules.provider_detector import get_provider_for_resource, SUPPORTED_PROVIDERS
+                from modules.provider_detector import (
+                    get_provider_for_resource,
+                    SUPPORTED_PROVIDERS,
+                )
+
                 _prov_counts = {}
                 for _k in tfdata.get("graphdict", {}):
                     _p = get_provider_for_resource(_k)
@@ -213,10 +222,7 @@ def compile_tfdata(
 
     # State-only fallback: when plan has no resource_changes and a statefile
     # is provided, populate synthetic entries from the state file.
-    if (
-        not tfdata.get("tf_resources_created")
-        and statefile
-    ):
+    if not tfdata.get("tf_resources_created") and statefile:
         click.echo(
             click.style(
                 "\nNo resource changes in plan — using state file as fallback.\n",
@@ -239,7 +245,9 @@ def compile_tfdata(
         # Provide prior_state for inject_data_source_nodes
         if "plandata" not in tfdata:
             tfdata["plandata"] = {}
-        tfdata["plandata"]["prior_state"] = state_converter.state_to_prior_state(state_data)
+        tfdata["plandata"]["prior_state"] = state_converter.state_to_prior_state(
+            state_data
+        )
         # Re-run graph building since tf_resources_created was empty on first pass
         if tfdata.get("tfgraph"):
             tfdata = tfwrapper.tf_makegraph(tfdata, debug)
@@ -281,15 +289,24 @@ def compile_tfdata(
     return tfdata
 
 
-def preflight_check(aibackend: Optional[str] = None) -> None:
+def preflight_check(
+    aibackend: Optional[str] = None,
+    output_format: Optional[str] = None,
+    planfile: Optional[str] = None,
+) -> None:
     """Check required dependencies and Terraform version compatibility.
 
     Args:
         aibackend: AI backend to validate ('ollama' or 'bedrock')
+        output_format: Output format ('drawio', 'png', 'svg', ...). The drawio
+            renderer doesn't need graphviz (dot/gvpr), so those checks are
+            skipped when format is 'drawio'.
+        planfile: Path to pre-generated plan JSON. When supplied, the
+            terraform/tofu binary check is skipped entirely.
     """
     click.echo(click.style("\nPreflight check..", fg="white", bold=True))
-    helpers.check_dependencies()
-    helpers.check_terraform_version()
+    helpers.check_dependencies(output_format=output_format, planfile=planfile)
+    helpers.check_terraform_version(planfile=planfile)
 
     if aibackend:
         # Load default AWS config for preflight (endpoints are the same across providers)
@@ -435,7 +452,11 @@ def draw(
                 fg="yellow",
             )
         )
-    preflight_check(aibackend if not planfile else None)
+    preflight_check(
+        aibackend if not planfile else None,
+        output_format=format,
+        planfile=planfile,
+    )
     tfdata = compile_tfdata(
         source, varfile, workspace, debug, annotate, planfile, graphfile, statefile
     )
@@ -562,7 +583,10 @@ def graphdata(
                 fg="yellow",
             )
         )
-    preflight_check(aibackend if not planfile else None)
+    preflight_check(
+        aibackend if not planfile else None,
+        planfile=planfile,
+    )
     tfdata = compile_tfdata(
         source, varfile, workspace, debug, annotate, planfile, graphfile
     )
