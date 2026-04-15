@@ -5,6 +5,7 @@ Processes resource metadata and manages variable substitution across modules.
 """
 
 from typing import Dict, List, Any, Tuple
+import json
 import modules.helpers as helpers
 import hcl2
 import click
@@ -839,7 +840,13 @@ def get_variable_values(
     if tfdata.get("all_variable") and not already_processed:
         for varfile in tfdata["varfile_list"]:
             with click.open_file(varfile, encoding="utf8", mode="r") as f:
-                variable_values = hcl2.load(f)
+                # Terraform accepts both HCL (.tfvars) and JSON (.tfvars.json)
+                # variable files. Scalr injects workspace variables as
+                # terraform.tfvars.json on the runner, so we need both.
+                if str(varfile).lower().endswith(".json"):
+                    variable_values = json.load(f)
+                else:
+                    variable_values = hcl2.load(f)
             # Apply user-supplied values
             for uservar in variable_values:
                 var_data[uservar.lower()] = variable_values[uservar]
