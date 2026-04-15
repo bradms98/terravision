@@ -10,6 +10,7 @@ import copy
 from pathlib import Path
 import subprocess
 import click
+import pydot
 import modules.gitlibs as gitlibs
 import modules.helpers as helpers
 import modules.fileparser as fileparser
@@ -46,41 +47,88 @@ MODULE_DIR = str(Path(Path.home(), ".terravision", "module_cache"))
 
 
 def convert_dot_to_json(dot_file: str) -> dict:
-    """Convert a Graphviz DOT file to a JSON dictionary.
+    """Convert a Graphviz DOT file to the xdot_json-shaped dictionary.
 
-    Uses the `dot` command-line tool to convert a DOT format graph file
-    into xdot JSON format, then parses and returns the result.
+    Pure-Python parser using pydot, avoiding the need for the ``dot``
+    binary on the host. Only the fields actually consumed downstream
+    (``objects[].{_gvid, name, label}`` and ``edges[].{head, tail}``)
+    are populated; this mirrors what ``dot -Txdot_json`` would emit
+    for the same input.
 
     Args:
         dot_file: Path to the input DOT file.
 
     Returns:
-        Parsed JSON dictionary of the graph data.
+        Dict with ``objects`` and ``edges`` lists.
     """
-    json_file = tempfile.NamedTemporaryFile(suffix=".json", delete=False).name
     try:
-        result = subprocess.run(
-            ["dot", "-Txdot_json", "-o", json_file, dot_file],
-            capture_output=True,
-            text=True,
+        graphs = pydot.graph_from_dot_file(dot_file)
+    except Exception as e:
+        click.echo(
+            click.style(f"\nERROR: Failed to parse DOT file: {e}", fg="red", bold=True)
         )
-        if result.returncode != 0:
-            click.echo(
-                click.style(
-                    f"\nERROR: Failed to convert graph with Graphviz.",
-                    fg="red",
-                    bold=True,
-                )
+        exit(1)
+    if not graphs:
+        click.echo(
+            click.style(
+                f"\nERROR: No graphs found in DOT file {dot_file}", fg="red", bold=True
             )
-            if result.stderr:
-                click.echo(click.style(f"Details: {result.stderr}", fg="red"))
-            exit(result.returncode)
-        with open(json_file) as f:
-            graphdata = json.load(f)
-        return graphdata
-    finally:
-        if os.path.exists(json_file):
-            os.remove(json_file)
+        )
+        exit(1)
+    graph = graphs[0]
+
+    def _unquote(value):
+        if value is None:
+            return value
+        if isinstance(value, str) and len(value) >= 2:
+            if (value[0] == value[-1]) and value[0] in ('"', "'"):
+                value = value[1:-1]
+            # Match `dot -Txdot_json` which de-escapes embedded quotes/backslashes.
+            value = value.replace('\\"', '"').replace("\\\\", "\\")
+        return value
+
+    name_to_gvid: Dict[str, int] = {}
+    objects: List[Dict[str, Any]] = []
+
+    def _collect_nodes(g):
+        for node in g.get_nodes():
+            raw_name = node.get_name()
+            name = _unquote(raw_name)
+            # pydot surfaces graph-level default nodes with these names; skip.
+            if name in ("node", "edge", "graph", ""):
+                continue
+            if name in name_to_gvid:
+                continue
+            attrs = node.get_attributes() or {}
+            label = _unquote(attrs.get("label")) or name
+            gvid = len(objects)
+            name_to_gvid[name] = gvid
+            objects.append({"_gvid": gvid, "name": name, "label": label})
+        for sub in g.get_subgraphs():
+            _collect_nodes(sub)
+
+    _collect_nodes(graph)
+
+    edges: List[Dict[str, int]] = []
+
+    def _collect_edges(g):
+        for edge in g.get_edges():
+            src = _unquote(edge.get_source())
+            dst = _unquote(edge.get_destination())
+            # Auto-register any endpoints that weren't declared as nodes.
+            for endpoint in (src, dst):
+                if endpoint and endpoint not in name_to_gvid:
+                    gvid = len(objects)
+                    name_to_gvid[endpoint] = gvid
+                    objects.append({"_gvid": gvid, "name": endpoint, "label": endpoint})
+            if src and dst:
+                edges.append({"tail": name_to_gvid[src], "head": name_to_gvid[dst]})
+        for sub in g.get_subgraphs():
+            _collect_edges(sub)
+
+    _collect_edges(graph)
+
+    return {"objects": objects, "edges": edges}
 
 
 def tf_initplan(
