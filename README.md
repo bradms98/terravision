@@ -372,6 +372,45 @@ graph LR
     style E fill:#fce4ec
 ```
 
+### Scalr Post-Apply Hook
+
+For [Scalr](https://scalr.com)-managed workspaces, `hooks/scalr-post-apply.sh` runs terravision inside the apply itself and uploads the resulting draw.io diagram to a Confluence page — one child page per workspace. Configure it once at the **environment level** in Scalr and every workspace in that environment gets its diagram refreshed on every successful apply.
+
+**Environment-level post-apply hook command (Scalr UI → Environment → Hooks):**
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/bradms98/terravision/main/hooks/scalr-post-apply.sh | bash
+```
+
+**Required Scalr shell variables** (set at environment level so all workspaces inherit them):
+
+| Variable | Sensitive | Example value | Description |
+|---|---|---|---|
+| `CONF_USER` | no | `user@example.com` | Atlassian account email used for API auth |
+| `CONF_TOKEN` | **yes** | `ATATT3xFfGF0...` | Atlassian API token — create at id.atlassian.com → Security → API tokens |
+| `CONFLUENCE_BASE_URL` | no | `https://example.atlassian.net/wiki/rest/api` | Your Confluence REST API base URL (note the `/wiki/rest/api` suffix) |
+| `CONFLUENCE_PARENT_PAGE_ID` | no | `1234567890` | ID of the parent page under which per-workspace child pages will live |
+| `CONFLUENCE_SPACE_KEY` | no | `ENG` | Confluence space key where new pages are created (found in space settings) |
+
+**Optional shell variables:**
+
+| Variable | Default | Description |
+|---|---|---|
+| `GH_TOKEN` | unset | GitHub PAT; only needed if you fork this repo and make it private |
+| `LOGGING` | `INFO` | `NONE` (errors only), `INFO` (progress banners), or `DEBUG` (full tool output + HTTP bodies) |
+
+**What the hook does on each apply:**
+
+1. Skips immediately if `SCALR_RUN_IS_DESTROY=1`.
+2. Fails fast if any required variable above is unset, before doing any expensive work.
+3. Installs `uv` and terravision into a throwaway venv at `/tmp/tv-venv`.
+4. Extracts plan JSON from `/opt/data/terraform.tfplan.bin`, pulls current state, and generates the Terraform graph.
+5. Runs `terravision draw --format drawio` against the best available combination of plan/state/graph.
+6. Looks up or creates a Confluence child page titled `$SCALR_WORKSPACE_NAME` under `CONFLUENCE_PARENT_PAGE_ID`.
+7. Uploads `architecture.drawio` as an attachment and rewrites the page body to include a note banner (naming the workspace) and a draw.io macro that renders the attachment.
+
+The page title uses `SCALR_WORKSPACE_NAME` directly, so each workspace in the environment gets its own page with no per-workspace config.
+
 ### GitHub Actions
 
 Use the official [TerraVision Action](https://github.com/bradms98/terravision-action):
