@@ -372,7 +372,8 @@ def cli() -> None:
     "--filter",
     "filter_name",
     default="",
-    help="Filter profile name from filters/ directory (e.g. network, security)",
+    envvar="TERRAVISION_FILTER",
+    help="Filter profile name from filters/ directory (e.g. network, security). Use 'none' to disable filtering. Falls back to filters/default.yaml if the named file is missing. Env: TERRAVISION_FILTER",
 )
 @click.option(
     "--aibackend",
@@ -469,10 +470,15 @@ def draw(
         graphmaker.simplify_graphdict(tfdata)
         _print_graph_debug(tfdata["graphdict"], "Simplified graphviz dictionary")
 
-    # Apply filter profile to exclude resource types
-    if filter_name:
+    # Apply filter profile to exclude resource types.
+    # TERRAVISION_FILTER=none (case-insensitive) disables filtering entirely,
+    # including the renderer's own render-time hiding.
+    if filter_name and filter_name.lower() != "none":
         graphmaker.filter_graphdict(tfdata, filter_name)
         _print_graph_debug(tfdata["graphdict"], "Filtered graphviz dictionary")
+    elif filter_name and filter_name.lower() == "none":
+        click.echo("Filter disabled (TERRAVISION_FILTER=none)")
+        tfdata["hide_types"] = set()
 
     # Add provider suffix to output filename for non-AWS providers
     final_outfile = outfile
@@ -516,7 +522,8 @@ def draw(
     "--filter",
     "filter_name",
     default="",
-    help="Filter profile name from filters/ directory (e.g. network, security)",
+    envvar="TERRAVISION_FILTER",
+    help="Filter profile name from filters/ directory (e.g. network, security). Use 'none' to disable filtering. Falls back to filters/default.yaml if the named file is missing. Env: TERRAVISION_FILTER",
 )
 @click.option(
     "--simplified",
@@ -595,8 +602,11 @@ def graphdata(
         tfdata = llm.refine_with_llm(tfdata, aibackend, debug)
     if simplified:
         graphmaker.simplify_graphdict(tfdata)
-    if filter_name:
+    if filter_name and filter_name.lower() != "none":
         graphmaker.filter_graphdict(tfdata, filter_name)
+    elif filter_name and filter_name.lower() == "none":
+        click.echo("Filter disabled (TERRAVISION_FILTER=none)")
+        tfdata["hide_types"] = set()
     click.echo(click.style("\nFinal Output JSON Dictionary :", fg="white", bold=True))
     unique = helpers.unique_services(tfdata["graphdict"])
     click.echo(
