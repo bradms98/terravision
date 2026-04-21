@@ -2832,42 +2832,75 @@ def filter_graphdict(tfdata: Dict[str, Any], filter_name: str) -> None:
         Path(__file__).parent.parent / "filters",
     ]
 
-    filter_path = None
-    for search_dir in search_paths:
-        candidate = search_dir / f"{filter_name}.yaml"
-        if candidate.exists():
-            filter_path = candidate
-            break
+    def _find_filter(name: str):
+        for search_dir in search_paths:
+            candidate = search_dir / f"{name}.yaml"
+            if candidate.exists():
+                return candidate
+        return None
 
-    if filter_path is None:
-        click.echo(
-            click.style(
-                f"\nERROR: Filter '{filter_name}' not found.",
-                fg="red",
-            )
-        )
-        # List available filters from all search paths
+    def _list_available() -> list:
         available = set()
         for search_dir in search_paths:
             if search_dir.exists():
                 available.update(f.stem for f in search_dir.glob("*.yaml"))
+        return sorted(available)
+
+    filter_path = _find_filter(filter_name)
+    resolved_name = filter_name
+
+    if filter_path is None and filter_name != "default":
+        click.echo(
+            click.style(
+                f"\nERROR: Filter '{filter_name}' not found — running with 'default' filter instead.",
+                fg="red",
+            )
+        )
+        available = _list_available()
         if available:
-            click.echo(f"Available filters: {', '.join(sorted(available))}")
+            click.echo(f"  Available filters: {', '.join(available)}")
+        click.echo(
+            "  Set --filter=<name> or TERRAVISION_FILTER=<name> to one of the above, "
+            "or 'none' to disable filtering entirely."
+        )
+        filter_path = _find_filter("default")
+        resolved_name = "default"
+
+    if filter_path is None:
+        click.echo(
+            click.style(
+                f"\nERROR: Filter '{filter_name}' not found and no default filter available.",
+                fg="red",
+            )
+        )
+        available = _list_available()
+        if available:
+            click.echo(f"  Available filters: {', '.join(available)}")
         else:
             click.echo(
-                "No filter files found. Create YAML files in a filters/ directory."
+                "  No filter files found. Create YAML files in a filters/ directory."
             )
+        click.echo(
+            "  Set --filter=<name> or TERRAVISION_FILTER=<name> to one of the above, "
+            "or 'none' to disable filtering entirely."
+        )
         return
 
     with open(filter_path, "r") as f:
         filter_config = yaml.safe_load(f)
 
     exclude_types = set(filter_config.get("exclude", []))
+
+    # Publish the resolved exclude list so the drawio renderer hides the same
+    # types at render time. Without this, the renderer would fall back to
+    # filters/default.yaml regardless of --filter choice.
+    tfdata["hide_types"] = exclude_types
+
     if not exclude_types:
-        click.echo(f"Filter '{filter_name}' has no exclude list, skipping.")
+        click.echo(f"Filter '{resolved_name}' has no exclude list, skipping.")
         return
 
-    click.echo(f"\nApplying filter: {filter_name}")
+    click.echo(f"\nApplying filter: {resolved_name}")
     click.echo(f"  Excluding {len(exclude_types)} resource type(s)")
 
     graphdict = tfdata.get("graphdict", {})

@@ -38,6 +38,13 @@ Terravision's draw.io rendering path is pure Python (XML generation via `Element
 | `CONF_TOKEN` | Workspace or Environment | Yes | Atlassian API token |
 | `GH_TOKEN` | Workspace or Environment | Yes | GitHub token (only needed if Terravision repo goes private) |
 
+### Optional Scalr Variables
+
+| Variable | Level | Default | Description |
+|---|---|---|---|
+| `TERRAVISION_FILTER` | Workspace or Environment | unset | Filter profile name (e.g. `network`). Loads `filters/<name>.yaml` from the Terravision package; unknown names fall back to `default` with a logged error; `none` disables filtering at both the graph and render layers. See the main [README → Filter Profiles](../README.md#filter-profiles). |
+| `LOGGING` | Workspace or Environment | `INFO` | `NONE` (errors only), `INFO` (progress banners), or `DEBUG` (verbose tool output + HTTP bodies). |
+
 ### Auto-Injected Scalr Variables (no setup needed)
 
 | Variable | Description |

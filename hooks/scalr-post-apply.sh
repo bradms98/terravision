@@ -16,13 +16,19 @@ set -euo pipefail
 #   CONFLUENCE_SPACE_KEY      — Confluence space key for new pages
 #
 # Optional:
-#   GH_TOKEN  — GitHub token (if terravision repo goes private)
-#   LOGGING   — NONE | INFO (default) | DEBUG
-#               NONE:  errors only
-#               INFO:  progress banners + status
-#               DEBUG: INFO + verbose tool output,
-#                      HTTP codes/bodies, plan/state info
-#               tqdm progress bars are always suppressed.
+#   GH_TOKEN            — GitHub token (if terravision repo goes private)
+#   TERRAVISION_FILTER  — filter profile name (e.g. "network", "security").
+#                         Loads filters/<name>.yaml from the terravision
+#                         package. Falls back to filters/default.yaml if the
+#                         named file is missing (error is logged). Set to
+#                         "none" to disable filtering entirely. Unset = no
+#                         filter applied.
+#   LOGGING             — NONE | INFO (default) | DEBUG
+#                         NONE:  errors only
+#                         INFO:  progress banners + status
+#                         DEBUG: INFO + verbose tool output,
+#                                HTTP codes/bodies, plan/state info
+#                         tqdm progress bars are always suppressed.
 
 CONF_BASE_URL="${CONFLUENCE_BASE_URL:-}"
 PARENT_PAGE_ID="${CONFLUENCE_PARENT_PAGE_ID:-}"

@@ -467,21 +467,27 @@ def render_drawio(tfdata, outfile, source, layout):
                 vpc_prefix_identities[pfx] = ids
                 vpc_all_names |= ids
 
-    # Resource types to hide (loaded from filters/default.yaml)
-    HIDE_TYPES = set()
-    try:
-        import yaml
-        from pathlib import Path
+    # Resource types to hide at render time. Prefer the set published by the
+    # graph-level filter (graphmaker.filter_graphdict) or the --filter=none
+    # short-circuit; otherwise fall back to filters/default.yaml so an
+    # unfiltered invocation still drops the noisy defaults.
+    if "hide_types" in tfdata:
+        HIDE_TYPES = set(tfdata["hide_types"])
+    else:
+        HIDE_TYPES = set()
+        try:
+            import yaml
+            from pathlib import Path
 
-        _default_filter = (
-            Path(__file__).resolve().parent.parent / "filters" / "default.yaml"
-        )
-        if _default_filter.exists():
-            with open(_default_filter) as _f:
-                _filter_data = yaml.safe_load(_f)
-            HIDE_TYPES = set(_filter_data.get("exclude", []))
-    except Exception:
-        pass
+            _default_filter = (
+                Path(__file__).resolve().parent.parent / "filters" / "default.yaml"
+            )
+            if _default_filter.exists():
+                with open(_default_filter) as _f:
+                    _filter_data = yaml.safe_load(_f)
+                HIDE_TYPES = set(_filter_data.get("exclude", []))
+        except Exception:
+            pass
 
     def _targets_different_vpc(resource_key, current_vpc_identities):
         """Check if a resource key's bracket content references a different VPC.

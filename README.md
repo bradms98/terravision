@@ -119,7 +119,7 @@ Output is written to `<repo>/docs/architecture/architecture.drawio` by default.
 | `TF_API_TOKEN` | Yes | | Scalr API token |
 | `SCALR_HOSTNAME` | Yes | | Scalr instance (e.g. `sunward.scalr.io`) |
 | `WORKSPACE_ID` | Yes | | Scalr workspace ID |
-| `DIAGRAM_FILTER` | No | `default` | Filter profile, or `none` to show all resources |
+| `DIAGRAM_FILTER` | No | `default` | Filter profile name (see [Filter Profiles](#filter-profiles)). Set to `none` to disable filtering entirely; unknown names fall back to `default` with a logged error. |
 | `OUTPUT_FORMAT` | No | `drawio` | `drawio`, `png`, or `both` |
 | `OUTPUT_PATH` | No | `docs/architecture` | Output directory relative to source |
 | `GH_TOKEN` | No | | GitHub token for cloning private modules |
@@ -242,10 +242,43 @@ terravision draw --source ./terraform --show
 | `--planfile`  | Pre-generated plan JSON file  | `plan.json`                |
 | `--graphfile` | Pre-generated graph DOT file  | `graph.dot`                |
 | `--statefile` | Terraform state JSON file     | `state.json`               |
-| `--filter`    | Filter profile from `filters/` dir | `default`, `network`  |
+| `--filter`    | Filter profile from `filters/` dir (see [Filter Profiles](#filter-profiles)) | `default`, `network`, `none` |
 | `--simplified` | Simplified high-level view   | (flag)                     |
 | `--show`      | Open diagram after generation | (flag)                     |
 | `--debug`     | Enable debug output           | (flag)                     |
+
+### Filter Profiles
+
+TerraVision reads YAML filter files from the `filters/` directory to decide which resource types to drop from the diagram (both from the logical graph and at render time). This keeps the diagram focused on architecturally interesting resources instead of IAM/CloudWatch/SSM plumbing.
+
+**Selecting a filter:**
+
+```sh
+# CLI flag
+terravision draw --source ./terraform --filter network
+
+# Environment variable (same behavior, useful for Scalr hooks, Docker, CI)
+TERRAVISION_FILTER=network terravision draw --source ./terraform
+```
+
+The flag takes precedence over the env var when both are set.
+
+**Built-in profiles** (in `filters/`):
+
+| Name | Purpose |
+|---|---|
+| `default` | Drops noisy plumbing (IAM, CloudWatch, KMS, SSM, route tables, flow logs, etc.). Used by the renderer when no `--filter` is supplied. |
+| `network` | Keeps VPCs, subnets, gateways, and networking resources; hides IAM, monitoring, and keys. |
+
+Add your own by dropping a `<name>.yaml` file into `filters/` with an `exclude:` list of resource types.
+
+**Special values:**
+
+| Value | Behavior |
+|---|---|
+| _(omitted / empty)_ | Graph is unfiltered; the renderer still applies `filters/default.yaml` so unfiltered output isn't overwhelming. |
+| `none` | Fully disables filtering at both the graph and render layers — every resource is shown. |
+| _unknown name_ | Logs a red `ERROR:` message listing available filters and the fix, then falls back to `default` for the rest of the run. Non-fatal. |
 
 ### Supported Output Formats
 
@@ -397,6 +430,7 @@ curl -fsSL https://raw.githubusercontent.com/bradms98/terravision/main/hooks/sca
 | Variable | Default | Description |
 |---|---|---|
 | `GH_TOKEN` | unset | GitHub PAT; only needed if you fork this repo and make it private |
+| `TERRAVISION_FILTER` | unset | Filter profile name (e.g. `network`, `security`). Loads `filters/<name>.yaml` from the terravision package; falls back to `filters/default.yaml` if the named file is missing (error is logged). Set to `none` to disable filtering entirely. Unset = no filter applied. |
 | `LOGGING` | `INFO` | `NONE` (errors only), `INFO` (progress banners), or `DEBUG` (full tool output + HTTP bodies) |
 
 **What the hook does on each apply:**
